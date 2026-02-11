@@ -111,6 +111,87 @@ def find_column_name(columns: pd.Index, target_name: str) -> str | None:
     return None
 
 
+def parse_numeric_dimension(value: object) -> float | None:
+    """Convierte una medida textual a número para evaluaciones condicionales."""
+    if pd.isna(value):
+        return None
+
+    text_value = str(value).strip().lower()
+    text_value = re.sub(r"\s*mm$", "", text_value, flags=re.IGNORECASE).strip()
+    text_value = text_value.replace(",", ".")
+    match = re.search(r"-?\d+(?:\.\d+)?", text_value)
+    if not match:
+        return None
+
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def normalize_dimension_text(series: pd.Series) -> pd.Series:
+    """Limpia texto dimensional retirando sufijo mm y espacios."""
+    return (
+        series.astype("string")
+        .str.strip()
+        .str.replace(r"\s*mm$", "", regex=True, case=False)
+    )
+
+
+def apply_typology_dimension_rules(transformed: pd.DataFrame) -> pd.DataFrame:
+    """Aplica reglas de reordenación Lenx/LenY/LenZ según Tipología."""
+    lenx_column = find_column_name(transformed.columns, "Lenx")
+    leny_column = find_column_name(transformed.columns, "LenY")
+    lenz_column = find_column_name(transformed.columns, "LenZ")
+    tipologia_column = find_column_name(transformed.columns, "Tipología") or find_column_name(
+        transformed.columns, "Tipologia"
+    )
+
+    required_columns = [lenx_column, leny_column, lenz_column, tipologia_column]
+    if any(col is None for col in required_columns):
+        return transformed
+
+    reordered = transformed.copy()
+    d1 = reordered[lenx_column].copy()
+    d2 = reordered[leny_column].copy()
+    d3 = reordered[lenz_column].copy()
+    tipologia = reordered[tipologia_column].astype("string").str.strip().str.upper().fillna("")
+
+    mask_r = tipologia.str.startswith("R")
+    mask_e = tipologia.str.startswith("E")
+    mask_b = tipologia.str.startswith("B")
+
+    d1_result = d1.copy()
+    d2_result = d2.copy()
+    d3_result = d3.copy()
+
+    # R: intercambio Dim2 <-> Dim3
+    d2_result.loc[mask_r] = d3.loc[mask_r]
+    d3_result.loc[mask_r] = d2.loc[mask_r]
+
+    # E: rotación (Dim1, Dim2, Dim3) = (Dim3, Dim1, Dim2)
+    d1_result.loc[mask_e] = d3.loc[mask_e]
+    d2_result.loc[mask_e] = d1.loc[mask_e]
+    d3_result.loc[mask_e] = d2.loc[mask_e]
+
+    # L + Dim2 ~ 18/19/20 (redondeado): intercambio Dim1 <-> Dim2
+    rounded_d2 = d2.apply(parse_numeric_dimension).apply(lambda number: round(number) if number is not None else None)
+    mask_l = tipologia.str.startswith("L") & rounded_d2.isin([18, 19, 20])
+    d1_result.loc[mask_l] = d2.loc[mask_l]
+    d2_result.loc[mask_l] = d1.loc[mask_l]
+
+    # B: (Dim2, Dim3) = (Dim1, Dim2)
+    d2_result.loc[mask_b] = d1.loc[mask_b]
+    d3_result.loc[mask_b] = d2.loc[mask_b]
+
+    # Tras la permuta: Dim1 se elimina y quedan Dim2/Dim3 como LenY/LenZ.
+    reordered[leny_column] = normalize_dimension_text(d2_result)
+    reordered[lenz_column] = normalize_dimension_text(d3_result)
+    reordered = reordered.drop(columns=[lenx_column])
+
+    return reordered
+
+
 def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
     """Transformación de plantilla según requisitos del cliente."""
     transformed = df.copy()
@@ -139,7 +220,10 @@ def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
         hidden_values = transformed[hidden_column].astype("string").str.strip()
         transformed = transformed[~hidden_values.str.fullmatch(r"1(?:\.0+)?", na=False)].copy()
 
-    # 3) Eliminar sufijo "mm" en columnas dimensionales de texto.
+    # 3) Reglas de reordenación Lenx/LenY/LenZ por tipología.
+    transformed = apply_typology_dimension_rules(transformed)
+
+    # 4) Eliminar sufijo "mm" en columnas dimensionales de texto.
     dimensional_keywords = {
         "alto",
         "ancho",
@@ -163,12 +247,12 @@ def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
                 .str.replace(r"\s*mm$", "", regex=True, case=False)
             )
 
-    # 4) Eliminar la columna de Tirador(0=sin tirador), si existe.
+    # 5) Eliminar la columna de Tirador(0=sin tirador), si existe.
     tirador_column = find_column_name(transformed.columns, "Tirador(0=sin tirador)")
     if tirador_column is not None:
         transformed = transformed.drop(columns=[tirador_column])
 
-    # 5) Insertar la columna ID Proyecto en primera posición.
+    # 6) Insertar la columna ID Proyecto en primera posición.
     transformed.insert(0, "ID Proyecto", project_id)
 
     return transformed.reset_index(drop=True)
