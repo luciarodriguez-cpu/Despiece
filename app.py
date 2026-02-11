@@ -88,9 +88,18 @@ def load_csv(uploaded_file) -> tuple[pd.DataFrame, str, str]:
 
 
 def get_project_id_from_filename(filename: str) -> str:
-    """Extrae los 8 primeros dígitos del nombre del archivo."""
-    digits = "".join(re.findall(r"\d", filename or ""))
-    return digits[:8]
+    """Extrae el ID Proyecto en formato LL-NNNNN de la primera parte del nombre."""
+    clean_name = (filename or "").strip()
+    # Ignoramos extensión y nos quedamos con la primera parte del nombre.
+    stem = clean_name.rsplit(".", 1)[0]
+    first_part = re.split(r"[\s_]+", stem, maxsplit=1)[0]
+
+    match = re.fullmatch(r"([A-Za-z]{2})-(\d{5})", first_part)
+    if not match:
+        return ""
+
+    letters, numbers = match.groups()
+    return f"{letters.upper()}-{numbers}"
 
 
 def find_column_name(columns: pd.Index, target_name: str) -> str | None:
@@ -126,11 +135,11 @@ def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
 
 
 def validate_project_id(project_id: str) -> None:
-    """Valida que el identificador de proyecto tenga 8 dígitos."""
-    if len(project_id) != 8:
+    """Valida que el identificador de proyecto tenga formato LL-NNNNN."""
+    if not re.fullmatch(r"[A-Z]{2}-\d{5}", project_id):
         raise ValueError(
-            "No se pudieron obtener 8 dígitos del nombre del archivo CSV para 'ID Proyecto'. "
-            "Asegúrate de que el nombre del archivo incluye al menos 8 dígitos."
+            "No se pudo obtener un ID Proyecto válido del nombre del CSV. "
+            "El nombre debe empezar por 2 letras, un guion y 5 números (ejemplo: AB-12345)."
         )
 
 
