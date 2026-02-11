@@ -278,8 +278,6 @@ if uploaded_file is not None:
             f"Archivo leído correctamente (encoding: {encoding_used}, separador detectado: '{delimiter_used}')."
         )
 
-        st.metric("Piezas", original_df.shape[0])
-
         st.subheader(f"2) Vista previa original ({PREVIEW_ROWS} piezas visibles)")
         st.dataframe(
             original_df,
@@ -292,6 +290,11 @@ if uploaded_file is not None:
 
         # Aplicamos plantilla de transformación.
         final_df = transform_dataframe(original_df, project_id)
+
+        st.markdown(
+            f"<p style='font-size:2.25rem;font-weight:600;margin:0;'>{final_df.shape[0]} piezas</p>",
+            unsafe_allow_html=True,
+        )
 
         st.subheader(f"3) Resultado transformado ({PREVIEW_ROWS} piezas visibles)")
         st.dataframe(
