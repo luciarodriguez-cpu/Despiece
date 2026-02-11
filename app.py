@@ -7,6 +7,9 @@ import streamlit as st
 
 st.set_page_config(page_title="Plantilla de limpieza CSV", page_icon="🧹", layout="wide")
 
+PREVIEW_ROWS = 10
+PREVIEW_HEIGHT = 390
+
 # Título y breve explicación para usuarios sin perfil técnico.
 st.title("🧹 Limpieza básica de CSV")
 st.write(
@@ -112,14 +115,22 @@ if uploaded_file is not None:
 
         st.metric("Piezas", original_df.shape[0])
 
-        st.subheader("2) Vista previa original (20 piezas)")
-        st.dataframe(original_df.head(20), use_container_width=True)
+        st.subheader(f"2) Vista previa original ({PREVIEW_ROWS} piezas visibles)")
+        st.dataframe(
+            original_df,
+            use_container_width=True,
+            height=PREVIEW_HEIGHT,
+        )
 
         # Aplicamos plantilla de transformación.
         final_df = transform_dataframe(original_df)
 
-        st.subheader("3) Resultado transformado")
-        st.dataframe(final_df, use_container_width=True)
+        st.subheader(f"3) Resultado transformado ({PREVIEW_ROWS} piezas visibles)")
+        st.dataframe(
+            final_df,
+            use_container_width=True,
+            height=PREVIEW_HEIGHT,
+        )
 
         csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
