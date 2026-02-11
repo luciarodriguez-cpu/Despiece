@@ -192,65 +192,6 @@ def apply_typology_dimension_rules(transformed: pd.DataFrame) -> pd.DataFrame:
     return reordered
 
 
-def transform_material(df: pd.DataFrame) -> pd.DataFrame:
-    """Replica la lógica de Apps Script para dividir Material en Core/Gama/Acabado."""
-    transformed = df.copy()
-
-    map_f = [
-        ("LINOLEO", "LIN"),
-        ("LAMINADO", "LAM"),
-        ("WOOD", "WOO"),
-        ("LACA", "LAC"),
-    ]
-    map_g = {
-        "LINOLEO": "PLY",
-        "LAMINADO": "PLY",
-        "LACA": "MDF",
-        "WOOD": "MDF",
-    }
-
-    core_values: list[str] = []
-    gama_values: list[str] = []
-    acabado_values: list[str] = []
-
-    for value in transformed["Material"]:
-        # 1) Leer Material: NaN/null se convierte a cadena vacía.
-        text = "" if pd.isna(value) else str(value)
-
-        # 2) Normalizar wood horizontal/vertical, espacios múltiples y trim.
-        text = re.sub(r"wood\s+(?:horizontal|vertical)", "WOOD", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s+", " ", text).strip()
-
-        # 3) Separar palabras, última palabra en MAYÚSCULAS y acabado sin la última.
-        words = text.split(" ") if text else []
-        last_word = words[-1].upper() if words else ""
-        acabado = " ".join(words[:-1]) if len(words) > 1 else ""
-
-        # 4) Gama según última palabra.
-        gama = map_g.get(last_word, "")
-
-        # 5) Core por primera coincidencia en orden definido de map_f.
-        up = text.upper()
-        core = text
-        for key, mapped in map_f:
-            if key in up:
-                core = mapped
-                break
-
-        core_values.append(core)
-        gama_values.append(gama)
-        acabado_values.append(acabado)
-
-    # 6) Reemplazar Material por Core e insertar Gama y Acabado a continuación.
-    material_idx = transformed.columns.get_loc("Material")
-    transformed = transformed.drop(columns=["Material"])
-    transformed.insert(material_idx, "Core", core_values)
-    transformed.insert(material_idx + 1, "Gama", gama_values)
-    transformed.insert(material_idx + 2, "Acabado", acabado_values)
-
-    return transformed
-
-
 def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
     """Transformación de plantilla según requisitos del cliente."""
     transformed = df.copy()
