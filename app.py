@@ -6,16 +6,16 @@ import pandas as pd
 import streamlit as st
 
 
-st.set_page_config(page_title="Plantilla de limpieza CSV", page_icon="🧹", layout="wide")
+st.set_page_config(page_title="Despiece", page_icon="📋", layout="wide")
 
 PREVIEW_ROWS = 10
 PREVIEW_HEIGHT = 390
 
 # Título y breve explicación para usuarios sin perfil técnico.
-st.title("🧹 Limpieza básica de CSV")
-st.write(
-    "Sube un archivo CSV y la app aplicará la transformación solicitada: "
-    "quitar filas sin SKU, filtrar filas Hidden=1, normalizar textos y añadir 'ID Proyecto'."
+st.title("📋 Despiece")
+st.markdown(
+    'Sube tu informe de SKP en formato CSV y la app generará el despiece para Preproducción. '
+    'Recuerda que el nombre debe estar en formato "XX-00000 Nombre de cliente" *(esto en cursiva).*'
 )
 
 
