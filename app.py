@@ -1,4 +1,5 @@
 import csv
+import re
 from io import BytesIO, StringIO
 
 import pandas as pd
@@ -13,8 +14,8 @@ PREVIEW_HEIGHT = 390
 # Título y breve explicación para usuarios sin perfil técnico.
 st.title("🧹 Limpieza básica de CSV")
 st.write(
-    "Sube un archivo CSV y la app aplicará una transformación base: "
-    "eliminar columnas vacías y normalizar nombres de columnas."
+    "Sube un archivo CSV y la app aplicará la transformación solicitada: "
+    "quitar filas sin SKU, eliminar la columna de tirador y añadir 'ID Proyecto'."
 )
 
 
@@ -86,20 +87,51 @@ def load_csv(uploaded_file) -> tuple[pd.DataFrame, str, str]:
     return df, delimiter, encoding
 
 
-def transform_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Transformaciones base solicitadas."""
+def get_project_id_from_filename(filename: str) -> str:
+    """Extrae los 8 primeros dígitos del nombre del archivo."""
+    digits = "".join(re.findall(r"\d", filename or ""))
+    return digits[:8]
+
+
+def find_column_name(columns: pd.Index, target_name: str) -> str | None:
+    """Busca una columna ignorando mayúsculas/minúsculas y espacios extremos."""
+    normalized_target = target_name.strip().lower()
+    for col in columns:
+        if str(col).strip().lower() == normalized_target:
+            return str(col)
+    return None
+
+
+def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
+    """Transformación de plantilla según requisitos del cliente."""
     transformed = df.copy()
 
-    # 1) Limpiar espacios en nombres de columnas.
-    transformed.columns = transformed.columns.map(lambda col: str(col).strip())
+    sku_column = find_column_name(transformed.columns, "SKU")
+    if sku_column is None:
+        raise ValueError("No se encontró la columna 'SKU' en el CSV.")
 
-    # 2) Normalizar nombres de columnas a minúsculas.
-    transformed.columns = transformed.columns.map(lambda col: col.lower())
+    # 1) Eliminar filas sin valor en SKU.
+    sku_values = transformed[sku_column].astype("string").str.strip()
+    transformed = transformed[sku_values.notna() & (sku_values != "")].copy()
 
-    # 3) Eliminar columnas completamente vacías.
-    transformed = transformed.dropna(axis=1, how="all")
+    # 2) Eliminar la columna de Tirador(0=sin tirador), si existe.
+    tirador_column = find_column_name(transformed.columns, "Tirador(0=sin tirador)")
+    if tirador_column is not None:
+        transformed = transformed.drop(columns=[tirador_column])
 
-    return transformed
+    # 3) Insertar la columna ID Proyecto en primera posición.
+    transformed.insert(0, "ID Proyecto", project_id)
+
+    return transformed.reset_index(drop=True)
+
+
+def validate_project_id(project_id: str) -> None:
+    """Valida que el identificador de proyecto tenga 8 dígitos."""
+    if len(project_id) != 8:
+        raise ValueError(
+            "No se pudieron obtener 8 dígitos del nombre del archivo CSV para 'ID Proyecto'. "
+            "Asegúrate de que el nombre del archivo incluye al menos 8 dígitos."
+        )
 
 
 uploaded_file = st.file_uploader("1) Sube tu archivo CSV", type=["csv"])
@@ -122,8 +154,11 @@ if uploaded_file is not None:
             height=PREVIEW_HEIGHT,
         )
 
+        project_id = get_project_id_from_filename(uploaded_file.name)
+        validate_project_id(project_id)
+
         # Aplicamos plantilla de transformación.
-        final_df = transform_dataframe(original_df)
+        final_df = transform_dataframe(original_df, project_id)
 
         st.subheader(f"3) Resultado transformado ({PREVIEW_ROWS} piezas visibles)")
         st.dataframe(
