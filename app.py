@@ -15,7 +15,7 @@ PREVIEW_HEIGHT = 390
 st.title("🧹 Limpieza básica de CSV")
 st.write(
     "Sube un archivo CSV y la app aplicará la transformación solicitada: "
-    "quitar filas sin SKU, eliminar la columna de tirador y añadir 'ID Proyecto'."
+    "quitar filas sin SKU, filtrar filas Hidden=1, normalizar textos y añadir 'ID Proyecto'."
 )
 
 
@@ -115,20 +115,60 @@ def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
     """Transformación de plantilla según requisitos del cliente."""
     transformed = df.copy()
 
+    # Normalización base de texto: trim en columnas string/object.
+    text_columns = transformed.select_dtypes(include=["object", "string"]).columns
+    for col in text_columns:
+        transformed[col] = transformed[col].astype("string").str.strip()
+
     sku_column = find_column_name(transformed.columns, "SKU")
     if sku_column is None:
         raise ValueError("No se encontró la columna 'SKU' en el CSV.")
 
-    # 1) Eliminar filas sin valor en SKU.
-    sku_values = transformed[sku_column].astype("string").str.strip()
+    # 1) Eliminar filas sin valor en SKU (vacío, espacios o caracteres invisibles).
+    sku_values = (
+        transformed[sku_column]
+        .astype("string")
+        .str.replace(r"[\u200B-\u200D\uFEFF]", "", regex=True)
+        .str.strip()
+    )
     transformed = transformed[sku_values.notna() & (sku_values != "")].copy()
 
-    # 2) Eliminar la columna de Tirador(0=sin tirador), si existe.
+    # 2) Eliminar filas con Hidden = 1 (admite 1, "1", " 1 ").
+    hidden_column = find_column_name(transformed.columns, "Hidden")
+    if hidden_column is not None:
+        hidden_values = transformed[hidden_column].astype("string").str.strip()
+        transformed = transformed[~hidden_values.str.fullmatch(r"1(?:\.0+)?", na=False)].copy()
+
+    # 3) Eliminar sufijo "mm" en columnas dimensionales de texto.
+    dimensional_keywords = {
+        "alto",
+        "ancho",
+        "fondo",
+        "largo",
+        "profundidad",
+        "espesor",
+        "diametro",
+        "diámetro",
+        "dimension",
+        "dimensión",
+        "medida",
+    }
+    for col in transformed.columns:
+        normalized_col = str(col).strip().lower()
+        if any(keyword in normalized_col for keyword in dimensional_keywords):
+            transformed[col] = (
+                transformed[col]
+                .astype("string")
+                .str.strip()
+                .str.replace(r"\s*mm$", "", regex=True, case=False)
+            )
+
+    # 4) Eliminar la columna de Tirador(0=sin tirador), si existe.
     tirador_column = find_column_name(transformed.columns, "Tirador(0=sin tirador)")
     if tirador_column is not None:
         transformed = transformed.drop(columns=[tirador_column])
 
-    # 3) Insertar la columna ID Proyecto en primera posición.
+    # 5) Insertar la columna ID Proyecto en primera posición.
     transformed.insert(0, "ID Proyecto", project_id)
 
     return transformed.reset_index(drop=True)
