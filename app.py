@@ -110,13 +110,9 @@ if uploaded_file is not None:
             f"Archivo leído correctamente (encoding: {encoding_used}, separador detectado: '{delimiter_used}')."
         )
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Filas", f"{original_df.shape[0]:,}")
-        with col2:
-            st.metric("Columnas", f"{original_df.shape[1]:,}")
+        st.metric("Piezas", original_df.shape[0])
 
-        st.subheader("2) Vista previa original (20 filas)")
+        st.subheader("2) Vista previa original (20 piezas)")
         st.dataframe(original_df.head(20), use_container_width=True)
 
         # Aplicamos plantilla de transformación.
