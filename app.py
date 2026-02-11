@@ -15,7 +15,7 @@ PREVIEW_HEIGHT = 390
 st.title("📋 Despiece")
 st.markdown(
     'Sube tu informe de SKP en formato CSV y la app generará el despiece para Preproducción. '
-    'Recuerda que el nombre debe estar en formato "XX-00000 Nombre de cliente" *(esto en cursiva).*'
+    'Recuerda que el nombre debe estar en formato *XX-00000 Nombre de cliente*.'
 )
 
 
