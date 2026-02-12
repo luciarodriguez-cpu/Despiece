@@ -422,15 +422,27 @@ def transform_tiradores(df_user: pd.DataFrame, map_tiradores: dict) -> pd.DataFr
     return transformed
 
 
-def transform_trasera_tirador(df: pd.DataFrame) -> pd.DataFrame:
-    """Genera/sobrescribe la columna final 'Trasera Tirador' según reglas de negocio."""
-    required_columns = ["Tirador", "TraseraTirador", "Colortirador", "Acabado"]
+def transform_trasera_tirador(
+    df: pd.DataFrame,
+    source_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Genera/sobrescribe 'Trasera Tirador' usando campos de origen del CSV."""
+    source = df if source_df is None else source_df
+
+    required_columns = ["Tirador", "Acabado"]
     missing_columns = [column for column in required_columns if column not in df.columns]
+    source_required_columns = ["TraseraTirador", "Colortirador"]
+    missing_source_columns = [
+        column for column in source_required_columns if column not in source.columns
+    ]
+    missing_columns.extend(missing_source_columns)
     if missing_columns:
         missing_list = ", ".join(missing_columns)
         raise ValueError(f"Faltan columnas requeridas para 'Trasera Tirador': {missing_list}.")
 
     transformed = df.copy()
+    source_trasera_tirador = source["TraseraTirador"].reindex(transformed.index)
+    source_color_tirador = source["Colortirador"].reindex(transformed.index)
 
     def _normalize_text(value: object) -> str:
         if pd.isna(value):
@@ -453,12 +465,12 @@ def transform_trasera_tirador(df: pd.DataFrame) -> pd.DataFrame:
             return ""
 
         if tirador_value in {"Pill", "Round", "Square"}:
-            return _from_trasera_tirador(row["TraseraTirador"])
+            return _from_trasera_tirador(source_trasera_tirador.loc[row.name])
 
         if tirador_value == "U-Shape)":
             return _normalize_text(row["Acabado"]).upper()
 
-        return _normalize_text(row["Colortirador"]).upper()
+        return _normalize_text(source_color_tirador.loc[row.name]).upper()
 
     trasera_tirador = transformed.apply(_compute_row, axis=1)
 
@@ -501,6 +513,8 @@ def transform_dataframe(
     if hidden_column is not None:
         hidden_values = transformed[hidden_column].astype("string").str.strip()
         transformed = transformed[~hidden_values.str.fullmatch(r"1(?:\.0+)?", na=False)].copy()
+
+    source_for_trasera_tirador = transformed.copy()
 
     # 3) Reglas de reordenación Lenx/LenY/LenZ por tipología.
     transformed = apply_typology_dimension_rules(transformed)
@@ -550,7 +564,10 @@ def transform_dataframe(
     if obs_column is not None and obs_column != "Observaciones":
         transformed = transformed.rename(columns={obs_column: "Observaciones"})
 
-    transformed = transform_trasera_tirador(transformed)
+    transformed = transform_trasera_tirador(
+        transformed,
+        source_df=source_for_trasera_tirador,
+    )
 
     removable_columns = [
         col_name
