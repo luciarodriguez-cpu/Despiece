@@ -627,12 +627,19 @@ if uploaded_file is not None:
         disabled_columns = [col for col in final_df.columns if col != editable_column]
 
         if editable_column is not None:
+            final_df[editable_column] = final_df[editable_column].fillna("").astype("string")
             final_df = st.data_editor(
                 final_df,
                 width="stretch",
                 height=PREVIEW_HEIGHT,
                 num_rows="fixed",
                 disabled=disabled_columns,
+                column_config={
+                    editable_column: st.column_config.TextColumn(
+                        "Observaciones",
+                        help="Puedes escribir texto libre con letras, números y símbolos.",
+                    )
+                },
             )
         else:
             st.dataframe(
