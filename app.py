@@ -324,13 +324,17 @@ def transform_material_to_core_gama_acabado(
     source_index = transformed.columns.get_loc(source_col)
 
     # Evita conflictos si el CSV de usuario ya trae estas columnas.
-    transformed = transformed.drop(columns=[col for col in ["Core", "Gama", "Acabado"] if col in transformed.columns])
-    transformed = transformed.drop(columns=[source_col])
+    target_columns = ["Core", "Gama", "Acabado"]
+    existing_target_columns = [
+        column_name for column_name in target_columns if column_name in transformed.columns
+    ]
+    if existing_target_columns:
+        transformed = transformed.drop(columns=existing_target_columns)
 
+    transformed = transformed.drop(columns=[source_col])
     transformed.insert(source_index, "Core", core)
     transformed.insert(source_index + 1, "Gama", gama)
     transformed.insert(source_index + 2, "Acabado", acabado)
-
     return transformed
 
 
@@ -358,8 +362,8 @@ def transform_dataframe(df: pd.DataFrame, project_id: str, df_materiales: pd.Dat
 
     # Normalización base de texto: trim en columnas string/object.
     text_columns = transformed.select_dtypes(include=["object", "string"]).columns
-    for col in text_columns:
-        transformed[col] = transformed[col].astype("string").str.strip()
+    for column_name in text_columns:
+        transformed[column_name] = transformed[column_name].astype("string").str.strip()
 
     sku_column = find_column_name(transformed.columns, "SKU")
     if sku_column is None:
