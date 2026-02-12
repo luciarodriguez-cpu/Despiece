@@ -1,6 +1,7 @@
 import csv
 import re
 from io import BytesIO, StringIO
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -11,12 +12,91 @@ st.set_page_config(page_title="Despiece", page_icon="📋", layout="wide")
 PREVIEW_ROWS = 10
 PREVIEW_HEIGHT = 390
 
+EXPECTED_COLUMNS = {
+    "dimensiones_estandar.csv": ["Tipologia", "Ancho", "Largo"],
+    "materiales.csv": ["Material", "Core", "Gama"],
+    "aperturas.csv": ["clave_apertura", "valor_apertura"],
+    "tiradores.csv": ["clave_tirador", "valor_tirador"],
+}
+
+
 # Título y breve explicación para usuarios sin perfil técnico.
 st.title("📋 Despiece")
 st.markdown(
     'Sube tu informe de SKP en formato CSV y la app generará el despiece para Preproducción. '
     'Recuerda que el nombre debe estar en formato *XX-00000 Nombre de cliente*.'
 )
+
+
+def _read_csv_with_fallback(path: Path, keep_empty_strings: bool = False) -> pd.DataFrame:
+    """Lee CSV de base de datos probando separador coma y punto y coma."""
+    read_kwargs = {
+        "dtype": str,
+        "keep_default_na": not keep_empty_strings,
+    }
+
+    errors: list[str] = []
+    for sep in (",", ";"):
+        try:
+            return pd.read_csv(path, sep=sep, **read_kwargs)
+        except Exception as exc:
+            errors.append(f"sep='{sep}': {exc}")
+
+    raise ValueError(
+        f"No se pudo leer el CSV '{path.name}' con separador ',' ni ';'. "
+        f"Detalle: {' | '.join(errors)}"
+    )
+
+
+def _validate_columns(df: pd.DataFrame, expected: list[str], file_label: str) -> None:
+    missing_columns = [col for col in expected if col not in df.columns]
+    if missing_columns:
+        raise ValueError(
+            f"El archivo '{file_label}' no tiene las columnas esperadas. "
+            f"Faltan: {missing_columns}. Detectadas: {list(df.columns)}"
+        )
+
+
+def load_database() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str], dict[str, str]]:
+    """Carga y valida CSV de base de datos para usar en transformaciones internas."""
+    root_dir = Path(__file__).resolve().parent
+    data_dir = root_dir / "data"
+
+    required_paths = {name: data_dir / name for name in EXPECTED_COLUMNS}
+    missing_files = [name for name, path in required_paths.items() if not path.exists()]
+    if missing_files:
+        raise FileNotFoundError(
+            f"Faltan archivos en la carpeta data/: {missing_files}. "
+            f"Ruta evaluada: {data_dir}"
+        )
+
+    df_dimensiones = _read_csv_with_fallback(required_paths["dimensiones_estandar.csv"])
+    _validate_columns(df_dimensiones, EXPECTED_COLUMNS["dimensiones_estandar.csv"], "dimensiones_estandar.csv")
+    df_dimensiones = df_dimensiones[EXPECTED_COLUMNS["dimensiones_estandar.csv"]].copy()
+
+    df_materiales = _read_csv_with_fallback(required_paths["materiales.csv"])
+    _validate_columns(df_materiales, EXPECTED_COLUMNS["materiales.csv"], "materiales.csv")
+    df_materiales = df_materiales[EXPECTED_COLUMNS["materiales.csv"]].copy()
+
+    df_aperturas = _read_csv_with_fallback(required_paths["aperturas.csv"])
+    _validate_columns(df_aperturas, EXPECTED_COLUMNS["aperturas.csv"], "aperturas.csv")
+    map_aperturas = dict(
+        zip(df_aperturas["clave_apertura"].astype(str), df_aperturas["valor_apertura"].astype(str))
+    )
+
+    df_tiradores = _read_csv_with_fallback(required_paths["tiradores.csv"], keep_empty_strings=True)
+    _validate_columns(df_tiradores, EXPECTED_COLUMNS["tiradores.csv"], "tiradores.csv")
+    map_tiradores = dict(
+        zip(df_tiradores["clave_tirador"].astype(str), df_tiradores["valor_tirador"].astype(str))
+    )
+
+    return df_dimensiones, df_materiales, map_aperturas, map_tiradores
+
+
+@st.cache_data(show_spinner=False)
+def get_database() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str], dict[str, str]]:
+    """Cachea la base de datos para no recargar archivos en cada interacción."""
+    return load_database()
 
 
 def detect_encoding(file_bytes: bytes) -> str:
@@ -271,6 +351,12 @@ uploaded_file = st.file_uploader("1) Sube tu archivo CSV", type=["csv"])
 
 if uploaded_file is not None:
     try:
+        # Carga interna de base de datos (sin mostrarla en la UI).
+        df_dimensiones, df_materiales, map_aperturas, map_tiradores = get_database()
+
+        # Variables reservadas para futuras reglas de transformación con BBDD.
+        _ = (df_dimensiones, df_materiales, map_aperturas, map_tiradores)
+
         # Leemos el CSV de forma segura.
         original_df, delimiter_used, encoding_used = load_csv(uploaded_file)
 
@@ -281,7 +367,7 @@ if uploaded_file is not None:
         st.subheader(f"2) Vista previa original ({PREVIEW_ROWS} piezas visibles)")
         st.dataframe(
             original_df,
-            use_container_width=True,
+            width="stretch",
             height=PREVIEW_HEIGHT,
         )
 
@@ -299,7 +385,7 @@ if uploaded_file is not None:
         st.subheader(f"3) Resultado transformado ({PREVIEW_ROWS} piezas visibles)")
         st.dataframe(
             final_df,
-            use_container_width=True,
+            width="stretch",
             height=PREVIEW_HEIGHT,
         )
 
