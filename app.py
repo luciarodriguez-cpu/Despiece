@@ -503,6 +503,41 @@ def transform_dataframe(
     if obs_column is not None and obs_column != "Observaciones":
         transformed = transformed.rename(columns={obs_column: "Observaciones"})
 
+    trasera_tirador_column = find_column_name(transformed.columns, "TraseraTirador")
+    color_tirador_column = find_column_name(transformed.columns, "Colortirador")
+    if trasera_tirador_column is not None or color_tirador_column is not None:
+        target_position = min(
+            transformed.columns.get_loc(col_name)
+            for col_name in [trasera_tirador_column, color_tirador_column]
+            if col_name is not None
+        )
+
+        trasera_values = (
+            transformed[trasera_tirador_column].astype("string").str.strip()
+            if trasera_tirador_column is not None
+            else pd.Series(pd.NA, index=transformed.index, dtype="string")
+        )
+        color_values = (
+            transformed[color_tirador_column].astype("string").str.strip()
+            if color_tirador_column is not None
+            else pd.Series(pd.NA, index=transformed.index, dtype="string")
+        )
+
+        transformed_values = trasera_values.fillna("")
+        color_values_filled = color_values.fillna("")
+        both_values = (transformed_values != "") & (color_values_filled != "")
+        transformed_values = transformed_values.where(~both_values, transformed_values + " " + color_values_filled)
+        transformed_values = transformed_values.where(transformed_values != "", color_values_filled)
+        transformed_values = transformed_values.replace("", pd.NA)
+
+        removable_columns = [
+            col_name
+            for col_name in [trasera_tirador_column, color_tirador_column]
+            if col_name is not None
+        ]
+        transformed = transformed.drop(columns=removable_columns)
+        transformed.insert(target_position, "Trasera Tirador", transformed_values)
+
     removable_columns = [
         col_name
         for col_name in ["Tirador(0=sin tirador)", "Hidden"]
