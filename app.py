@@ -577,6 +577,8 @@ def transform_dataframe(
     if removable_columns:
         transformed = transformed.drop(columns=removable_columns)
 
+    transformed = transform_trasera_tirador(transformed)
+
     return transformed.reset_index(drop=True)
 
 
