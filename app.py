@@ -322,40 +322,31 @@ def transform_material_to_core_gama_acabado(
 
     transformed = df_user.copy()
     source_index = transformed.columns.get_loc(source_col)
+
+    # Evita conflictos si el CSV de usuario ya trae estas columnas.
+    target_columns = ["Core", "Gama", "Acabado"]
+    existing_target_columns = [
+        c for c in target_columns if c in transformed.columns
+    ]
+    if existing_target_columns:
+        transformed = transformed.drop(columns=existing_target_columns)
+
     transformed = transformed.drop(columns=[source_col])
     transformed.insert(source_index, "Core", core)
     transformed.insert(source_index + 1, "Gama", gama)
     transformed.insert(source_index + 2, "Acabado", acabado)
-
     return transformed
 
 
-# Ejemplo mínimo de uso:
-# if __name__ == "__main__":
-#     df_user_example = pd.DataFrame(
-#         {
-#             "Material": ["wood horizontal roble natural", "LACA algo", "SINMATCH xyz"],
-#             "OtraColumna": [1, 2, 3],
-#         }
-#     )
-#     df_materiales_example = pd.DataFrame(
-#         {
-#             "Material": ["WOOD", "LACA"],
-#             "Core": ["MDF", "MDF"],
-#             "Gama": ["WOO", "LAC"],
-#         }
-#     )
-#     print(transform_material_to_core_gama_acabado(df_user_example, df_materiales_example))
 
-
-def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
+def transform_dataframe(df: pd.DataFrame, project_id: str, df_materiales: pd.DataFrame) -> pd.DataFrame:
     """Transformación de plantilla según requisitos del cliente."""
     transformed = df.copy()
 
     # Normalización base de texto: trim en columnas string/object.
     text_columns = transformed.select_dtypes(include=["object", "string"]).columns
-    for col in text_columns:
-        transformed[col] = transformed[col].astype("string").str.strip()
+    for column_name in text_columns:
+        transformed[column_name] = transformed[column_name].astype("string").str.strip()
 
     sku_column = find_column_name(transformed.columns, "SKU")
     if sku_column is None:
@@ -379,7 +370,17 @@ def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
     # 3) Reglas de reordenación Lenx/LenY/LenZ por tipología.
     transformed = apply_typology_dimension_rules(transformed)
 
-    # 4) Eliminar sufijo "mm" en columnas dimensionales de texto.
+    # 4) Transformar Material en Core/Gama/Acabado con la BBDD de materiales.
+    material_column = find_column_name(transformed.columns, "Material")
+    if material_column is None:
+        raise ValueError("No se encontró la columna 'Material' en el CSV.")
+    transformed = transform_material_to_core_gama_acabado(
+        transformed,
+        df_materiales,
+        source_col=material_column,
+    )
+
+    # 5) Eliminar sufijo "mm" en columnas dimensionales de texto.
     dimensional_keywords = {
         "alto",
         "ancho",
@@ -403,12 +404,12 @@ def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
                 .str.replace(r"\s*mm$", "", regex=True, case=False)
             )
 
-    # 5) Eliminar la columna de Tirador(0=sin tirador), si existe.
+    # 6) Eliminar la columna de Tirador(0=sin tirador), si existe.
     tirador_column = find_column_name(transformed.columns, "Tirador(0=sin tirador)")
     if tirador_column is not None:
         transformed = transformed.drop(columns=[tirador_column])
 
-    # 6) Insertar la columna ID Proyecto en primera posición.
+    # 7) Insertar la columna ID Proyecto en primera posición.
     transformed.insert(0, "ID Proyecto", project_id)
 
     return transformed.reset_index(drop=True)
@@ -430,8 +431,7 @@ if uploaded_file is not None:
         # Carga interna de base de datos (sin mostrarla en la UI).
         df_dimensiones, df_materiales, map_aperturas, map_tiradores = get_database()
 
-        # Variables reservadas para futuras reglas de transformación con BBDD.
-        _ = (df_dimensiones, df_materiales, map_aperturas, map_tiradores)
+        _ = (df_dimensiones, map_aperturas, map_tiradores)
 
         # Leemos el CSV de forma segura.
         original_df, delimiter_used, encoding_used = load_csv(uploaded_file)
@@ -451,7 +451,7 @@ if uploaded_file is not None:
         validate_project_id(project_id)
 
         # Aplicamos plantilla de transformación.
-        final_df = transform_dataframe(original_df, project_id)
+        final_df = transform_dataframe(original_df, project_id, df_materiales)
 
         st.markdown(
             f"<p style='font-size:2.25rem;font-weight:600;margin:0;'>{final_df.shape[0]} piezas</p>",
