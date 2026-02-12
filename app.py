@@ -272,7 +272,83 @@ def apply_typology_dimension_rules(transformed: pd.DataFrame) -> pd.DataFrame:
     return reordered
 
 
-def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
+def transform_material_to_core_gama_acabado(
+    df_user: pd.DataFrame,
+    df_materiales: pd.DataFrame,
+    source_col: str = "Material",
+) -> pd.DataFrame:
+    """Transforma la columna Material en Core/Gama/Acabado usando base de materiales."""
+    if source_col not in df_user.columns:
+        raise ValueError(f"No se encontró la columna '{source_col}' en df_user.")
+
+    required_columns = ["Material", "Core", "Gama"]
+    missing_material_columns = [col for col in required_columns if col not in df_materiales.columns]
+    if missing_material_columns:
+        raise ValueError(
+            "df_materiales no tiene las columnas esperadas. "
+            f"Faltan: {missing_material_columns}."
+        )
+
+    user_values = df_user[source_col].fillna("").astype(str)
+    normalized = (
+        user_values
+        .str.replace(r"\bwood\s*(horizontal|vertical)\b", "WOOD", regex=True, case=False)
+        .str.replace(r"\s+", " ", regex=True)
+        .str.strip()
+    )
+
+    words = normalized.str.split()
+    first_word = words.str[0].fillna("").str.upper()
+    last_word = words.str[-1].fillna("").str.upper()
+    acabado = words.apply(lambda parts: " ".join(parts[:-1]) if len(parts) >= 2 else "")
+
+    material_lookup = (
+        df_materiales[["Material", "Core", "Gama"]]
+        .copy()
+        .fillna("")
+    )
+    material_lookup["Material"] = material_lookup["Material"].astype(str).str.upper().str.strip()
+
+    core_map = dict(zip(material_lookup["Material"], material_lookup["Core"].astype(str)))
+    gama_map = dict(zip(material_lookup["Material"], material_lookup["Gama"].astype(str)))
+
+    core_from_last = last_word.map(core_map)
+    gama_from_last = last_word.map(gama_map)
+    core_from_first = first_word.map(core_map)
+    gama_from_first = first_word.map(gama_map)
+
+    core = core_from_last.where(core_from_last.notna(), core_from_first).fillna("")
+    gama = gama_from_last.where(gama_from_last.notna(), gama_from_first).fillna("")
+
+    transformed = df_user.copy()
+    source_index = transformed.columns.get_loc(source_col)
+    transformed = transformed.drop(columns=[source_col])
+    transformed.insert(source_index, "Core", core)
+    transformed.insert(source_index + 1, "Gama", gama)
+    transformed.insert(source_index + 2, "Acabado", acabado)
+
+    return transformed
+
+
+# Ejemplo mínimo de uso:
+# if __name__ == "__main__":
+#     df_user_example = pd.DataFrame(
+#         {
+#             "Material": ["wood horizontal roble natural", "LACA algo", "SINMATCH xyz"],
+#             "OtraColumna": [1, 2, 3],
+#         }
+#     )
+#     df_materiales_example = pd.DataFrame(
+#         {
+#             "Material": ["WOOD", "LACA"],
+#             "Core": ["MDF", "MDF"],
+#             "Gama": ["WOO", "LAC"],
+#         }
+#     )
+#     print(transform_material_to_core_gama_acabado(df_user_example, df_materiales_example))
+
+
+def transform_dataframe(df: pd.DataFrame, project_id: str, df_materiales: pd.DataFrame) -> pd.DataFrame:
     """Transformación de plantilla según requisitos del cliente."""
     transformed = df.copy()
 
@@ -303,7 +379,17 @@ def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
     # 3) Reglas de reordenación Lenx/LenY/LenZ por tipología.
     transformed = apply_typology_dimension_rules(transformed)
 
-    # 4) Eliminar sufijo "mm" en columnas dimensionales de texto.
+    # 4) Transformar Material en Core/Gama/Acabado con la BBDD de materiales.
+    material_column = find_column_name(transformed.columns, "Material")
+    if material_column is None:
+        raise ValueError("No se encontró la columna 'Material' en el CSV.")
+    transformed = transform_material_to_core_gama_acabado(
+        transformed,
+        df_materiales,
+        source_col=material_column,
+    )
+
+    # 5) Eliminar sufijo "mm" en columnas dimensionales de texto.
     dimensional_keywords = {
         "alto",
         "ancho",
@@ -327,12 +413,12 @@ def transform_dataframe(df: pd.DataFrame, project_id: str) -> pd.DataFrame:
                 .str.replace(r"\s*mm$", "", regex=True, case=False)
             )
 
-    # 5) Eliminar la columna de Tirador(0=sin tirador), si existe.
+    # 6) Eliminar la columna de Tirador(0=sin tirador), si existe.
     tirador_column = find_column_name(transformed.columns, "Tirador(0=sin tirador)")
     if tirador_column is not None:
         transformed = transformed.drop(columns=[tirador_column])
 
-    # 6) Insertar la columna ID Proyecto en primera posición.
+    # 7) Insertar la columna ID Proyecto en primera posición.
     transformed.insert(0, "ID Proyecto", project_id)
 
     return transformed.reset_index(drop=True)
@@ -375,7 +461,7 @@ if uploaded_file is not None:
         validate_project_id(project_id)
 
         # Aplicamos plantilla de transformación.
-        final_df = transform_dataframe(original_df, project_id)
+        final_df = transform_dataframe(original_df, project_id, df_materiales)
 
         st.markdown(
             f"<p style='font-size:2.25rem;font-weight:600;margin:0;'>{final_df.shape[0]} piezas</p>",
