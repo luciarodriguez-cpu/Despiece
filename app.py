@@ -371,8 +371,64 @@ def transform_apertura(
     return df_user
 
 
+def transform_tiradores(df_user: pd.DataFrame, map_tiradores: dict) -> pd.DataFrame:
+    """Transforma la columna de tirador y garantiza salida en columna 'Tirador'."""
+    transformed = df_user.copy()
 
-def transform_dataframe(df: pd.DataFrame, project_id: str, df_materiales: pd.DataFrame) -> pd.DataFrame:
+    source_col = find_column_name(transformed.columns, "Tirador")
+    if source_col is None:
+        source_col = find_column_name(transformed.columns, "Tirador(0=sin tirador)")
+    if source_col is None:
+        return transformed
+
+    normalized_map_tiradores: dict[str, str] = {}
+    for key, value in map_tiradores.items():
+        if pd.isna(key):
+            continue
+        normalized_key = str(key).strip()
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", normalized_key):
+            try:
+                float_value = float(normalized_key)
+                if float_value.is_integer():
+                    normalized_key = str(int(float_value))
+            except ValueError:
+                pass
+        normalized_map_tiradores[normalized_key] = "" if pd.isna(value) else str(value)
+
+    original_values = transformed[source_col]
+    normalized_values = original_values.fillna("").astype(str).str.strip()
+
+    normalized_keys = normalized_values.copy()
+    numeric_mask = normalized_keys.str.fullmatch(r"-?\d+(?:\.\d+)?", na=False)
+    numeric_series = pd.to_numeric(normalized_keys[numeric_mask], errors="coerce")
+    integer_mask = numeric_series.notna() & (numeric_series % 1 == 0)
+    normalized_keys.loc[numeric_series[integer_mask].index] = numeric_series[integer_mask].astype(int).astype(str)
+
+    mapped_values = normalized_keys.map(normalized_map_tiradores)
+    transformed_values = mapped_values.where(mapped_values.notna(), normalized_values)
+
+    target_index = transformed.columns.get_loc(source_col)
+    if source_col != "Tirador" and "Tirador" in transformed.columns:
+        transformed = transformed.drop(columns=["Tirador"])
+        target_index = transformed.columns.get_loc(source_col)
+
+    transformed[source_col] = transformed_values
+    if source_col != "Tirador":
+        transformed = transformed.rename(columns={source_col: "Tirador"})
+        if transformed.columns.get_loc("Tirador") != target_index:
+            tirador_series = transformed.pop("Tirador")
+            transformed.insert(target_index, "Tirador", tirador_series)
+
+    return transformed
+
+
+
+def transform_dataframe(
+    df: pd.DataFrame,
+    project_id: str,
+    df_materiales: pd.DataFrame,
+    map_tiradores: dict,
+) -> pd.DataFrame:
     """Transformación de plantilla según requisitos del cliente."""
     transformed = df.copy()
 
@@ -413,7 +469,10 @@ def transform_dataframe(df: pd.DataFrame, project_id: str, df_materiales: pd.Dat
         source_col=material_column,
     )
 
-    # 5) Eliminar sufijo "mm" en columnas dimensionales de texto.
+    # 5) Transformar Tirador/Tirador(0=sin tirador) con equivalencias y salida final en "Tirador".
+    transformed = transform_tiradores(transformed, map_tiradores)
+
+    # 6) Eliminar sufijo "mm" en columnas dimensionales de texto.
     dimensional_keywords = {
         "alto",
         "ancho",
@@ -436,11 +495,6 @@ def transform_dataframe(df: pd.DataFrame, project_id: str, df_materiales: pd.Dat
                 .str.strip()
                 .str.replace(r"\s*mm$", "", regex=True, case=False)
             )
-
-    # 6) Eliminar la columna de Tirador(0=sin tirador), si existe.
-    tirador_column = find_column_name(transformed.columns, "Tirador(0=sin tirador)")
-    if tirador_column is not None:
-        transformed = transformed.drop(columns=[tirador_column])
 
     # 7) Insertar la columna ID Proyecto en primera posición.
     transformed.insert(0, "ID Proyecto", project_id)
@@ -484,7 +538,7 @@ if uploaded_file is not None:
         validate_project_id(project_id)
 
         # Aplicamos plantilla de transformación.
-        final_df = transform_dataframe(original_df, project_id, df_materiales)
+        final_df = transform_dataframe(original_df, project_id, df_materiales, map_tiradores)
         final_df = transform_apertura(final_df, map_aperturas, col="Apertura")
 
         st.markdown(
