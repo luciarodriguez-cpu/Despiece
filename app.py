@@ -441,8 +441,13 @@ def transform_trasera_tirador(
         raise ValueError(f"Faltan columnas requeridas para 'Trasera Tirador': {missing_list}.")
 
     transformed = df.copy()
-    source_trasera_tirador = source["TraseraTirador"].reindex(transformed.index)
-    source_color_tirador = source["Colortirador"].reindex(transformed.index)
+
+    source_trasera_tirador = (
+        source["TraseraTirador"].reset_index(drop=True).reindex(range(len(transformed)))
+    )
+    source_color_tirador = (
+        source["Colortirador"].reset_index(drop=True).reindex(range(len(transformed)))
+    )
 
     def _normalize_text(value: object) -> str:
         if pd.isna(value):
@@ -459,24 +464,32 @@ def transform_trasera_tirador(
         filtered_words = [word for word in words if word.upper() != "WOOD"]
         return " ".join(filtered_words).upper()
 
-    def _compute_row(row: pd.Series) -> str:
-        tirador_value = _normalize_text(row["Tirador"])
+    trasera_tirador_values: list[str] = []
+    for row_pos in range(len(transformed)):
+        tirador_value = _normalize_text(transformed.iloc[row_pos]["Tirador"])
         if tirador_value == "":
-            return ""
+            trasera_tirador_values.append("")
+            continue
 
         if tirador_value in {"Pill", "Round", "Square"}:
-            return _from_trasera_tirador(source_trasera_tirador.loc[row.name])
+            trasera_tirador_values.append(
+                _from_trasera_tirador(source_trasera_tirador.iloc[row_pos])
+            )
+            continue
 
         if tirador_value == "U-Shape)":
-            return _normalize_text(row["Acabado"]).upper()
+            trasera_tirador_values.append(
+                _normalize_text(transformed.iloc[row_pos]["Acabado"]).upper()
+            )
+            continue
 
-        return _normalize_text(source_color_tirador.loc[row.name]).upper()
-
-    trasera_tirador = transformed.apply(_compute_row, axis=1)
+        trasera_tirador_values.append(
+            _normalize_text(source_color_tirador.iloc[row_pos]).upper()
+        )
 
     if "Trasera Tirador" in transformed.columns:
         transformed = transformed.drop(columns=["Trasera Tirador"])
-    transformed.insert(len(transformed.columns), "Trasera Tirador", trasera_tirador)
+    transformed.insert(len(transformed.columns), "Trasera Tirador", trasera_tirador_values)
 
     return transformed
 
