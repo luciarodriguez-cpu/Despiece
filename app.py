@@ -503,6 +503,69 @@ def transform_dataframe(
     if obs_column is not None and obs_column != "Observaciones":
         transformed = transformed.rename(columns={obs_column: "Observaciones"})
 
+    trasera_tirador_column = find_column_name(transformed.columns, "TraseraTirador")
+    color_tirador_column = find_column_name(transformed.columns, "Colortirador")
+    if color_tirador_column is None:
+        color_tirador_column = find_column_name(transformed.columns, "ColorTirador")
+
+    if trasera_tirador_column is not None or color_tirador_column is not None:
+        target_position = min(
+            transformed.columns.get_loc(col_name)
+            for col_name in [trasera_tirador_column, color_tirador_column]
+            if col_name is not None
+        )
+
+        tirador_column = find_column_name(transformed.columns, "Tirador")
+        acabado_column = find_column_name(transformed.columns, "Acabado")
+
+        tirador_values = (
+            transformed[tirador_column].astype("string").str.strip().fillna("")
+            if tirador_column is not None
+            else pd.Series("", index=transformed.index, dtype="string")
+        )
+        trasera_values = (
+            transformed[trasera_tirador_column].astype("string").str.strip().fillna("")
+            if trasera_tirador_column is not None
+            else pd.Series("", index=transformed.index, dtype="string")
+        )
+        color_values = (
+            transformed[color_tirador_column].astype("string").str.strip().fillna("")
+            if color_tirador_column is not None
+            else pd.Series("", index=transformed.index, dtype="string")
+        )
+        acabado_values = (
+            transformed[acabado_column].astype("string").str.strip().fillna("")
+            if acabado_column is not None
+            else pd.Series("", index=transformed.index, dtype="string")
+        )
+
+        tirador_normalized = tirador_values.str.lower()
+        is_empty_tirador = tirador_normalized == ""
+        is_u_shape = tirador_normalized == "u-shape"
+        is_trasera_case = tirador_normalized.isin(["pill", "round", "square"])
+
+        trasera_processed = (
+            trasera_values
+            .str.replace(r"\s+\S+\s*$", "", regex=True)
+            .str.replace(r"\bWOOD\b", "", regex=True, case=False)
+            .str.replace(r"\s+", " ", regex=True)
+            .str.strip()
+            .str.upper()
+        )
+
+        transformed_values = color_values.str.upper()
+        transformed_values = transformed_values.where(~is_u_shape, acabado_values.str.upper())
+        transformed_values = transformed_values.where(~is_trasera_case, trasera_processed)
+        transformed_values = transformed_values.where(~is_empty_tirador, "")
+
+        removable_columns = [
+            col_name
+            for col_name in [trasera_tirador_column, color_tirador_column]
+            if col_name is not None
+        ]
+        transformed = transformed.drop(columns=removable_columns)
+        transformed.insert(target_position, "Trasera Tirador", transformed_values)
+
     removable_columns = [
         col_name
         for col_name in ["Tirador(0=sin tirador)", "Hidden"]
