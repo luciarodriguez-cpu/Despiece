@@ -322,7 +322,11 @@ def transform_material_to_core_gama_acabado(
 
     transformed = df_user.copy()
     source_index = transformed.columns.get_loc(source_col)
+
+    # Evita conflictos si el CSV de usuario ya trae estas columnas.
+    transformed = transformed.drop(columns=[col for col in ["Core", "Gama", "Acabado"] if col in transformed.columns])
     transformed = transformed.drop(columns=[source_col])
+
     transformed.insert(source_index, "Core", core)
     transformed.insert(source_index + 1, "Gama", gama)
     transformed.insert(source_index + 2, "Acabado", acabado)
