@@ -422,6 +422,52 @@ def transform_tiradores(df_user: pd.DataFrame, map_tiradores: dict) -> pd.DataFr
     return transformed
 
 
+def transform_trasera_tirador(df: pd.DataFrame) -> pd.DataFrame:
+    """Genera/sobrescribe la columna final 'Trasera Tirador' según reglas de negocio."""
+    required_columns = ["Tirador", "TraseraTirador", "ColorTirador", "Acabado"]
+    missing_columns = [column for column in required_columns if column not in df.columns]
+    if missing_columns:
+        missing_list = ", ".join(missing_columns)
+        raise ValueError(f"Faltan columnas requeridas para 'Trasera Tirador': {missing_list}.")
+
+    transformed = df.copy()
+
+    def _normalize_text(value: object) -> str:
+        if pd.isna(value):
+            return ""
+        return str(value).strip()
+
+    def _from_trasera_tirador(value: object) -> str:
+        normalized = _normalize_text(value)
+        if not normalized:
+            return ""
+
+        words = normalized.split()
+        words = words[:-1] if words else []
+        filtered_words = [word for word in words if word.upper() != "WOOD"]
+        return " ".join(filtered_words).upper()
+
+    def _compute_row(row: pd.Series) -> str:
+        tirador_value = _normalize_text(row["Tirador"])
+        if tirador_value == "":
+            return ""
+
+        if tirador_value in {"Pill", "Round", "Square"}:
+            return _from_trasera_tirador(row["TraseraTirador"])
+
+        if tirador_value == "U-Shape)":
+            return _normalize_text(row["Acabado"]).upper()
+
+        return _normalize_text(row["ColorTirador"]).upper()
+
+    trasera_tirador = transformed.apply(_compute_row, axis=1)
+
+    if "Trasera Tirador" in transformed.columns:
+        transformed = transformed.drop(columns=["Trasera Tirador"])
+    transformed.insert(len(transformed.columns), "Trasera Tirador", trasera_tirador)
+
+    return transformed
+
 
 def transform_dataframe(
     df: pd.DataFrame,
@@ -511,6 +557,8 @@ def transform_dataframe(
     ]
     if removable_columns:
         transformed = transformed.drop(columns=removable_columns)
+
+    transformed = transform_trasera_tirador(transformed)
 
     return transformed.reset_index(drop=True)
 
