@@ -351,17 +351,20 @@ def transform_apertura(
     if col not in df_user.columns:
         raise ValueError(f"No se encontró la columna '{col}' en df_user.")
 
-    # Normalizamos claves del mapa para que 1 y "1" sean equivalentes.
-    normalized_map_aperturas = {
-        str(key).strip(): value
-        for key, value in map_aperturas.items()
-        if not pd.isna(key)
-    }
+    # Normalizamos claves de equivalencia para que 1, "1" y "1.0" se traten como el mismo código.
+    normalized_map_aperturas = {}
+    for key, value in map_aperturas.items():
+        if pd.isna(key):
+            continue
+        normalized_key = str(key).strip()
+        normalized_key = re.sub(r"^(-?\d+)\.0+$", r"\1", normalized_key)
+        normalized_map_aperturas[normalized_key] = value
 
     # NaN/None se tratan como "", luego se convierte a texto y se hace strip.
     normalized_values = df_user[col].fillna("").astype(str).str.strip()
+    normalized_values = normalized_values.str.replace(r"^(-?\d+)\.0+$", r"\1", regex=True)
 
-    # Si hay equivalencia, usamos el valor mapeado; si no, conservamos el original normalizado.
+    # Si hay equivalencia, usamos el valor mapeado; si no, conservamos el valor original normalizado.
     mapped_values = normalized_values.map(normalized_map_aperturas)
     df_user[col] = mapped_values.where(mapped_values.notna(), normalized_values)
 
