@@ -338,6 +338,39 @@ def transform_material_to_core_gama_acabado(
     return transformed
 
 
+def transform_apertura(
+    df_user: pd.DataFrame,
+    map_aperturas: dict,
+    col: str = "Apertura",
+) -> pd.DataFrame:
+    """Transforma la columna Apertura usando equivalencias de la base de datos.
+
+    Ejemplo mínimo de uso:
+        df_resultado = transform_apertura(df_user, map_aperturas)
+    """
+    if col not in df_user.columns:
+        raise ValueError(f"No se encontró la columna '{col}' en df_user.")
+
+    # Normalizamos claves de equivalencia para que 1, "1" y "1.0" se traten como el mismo código.
+    normalized_map_aperturas = {}
+    for key, value in map_aperturas.items():
+        if pd.isna(key):
+            continue
+        normalized_key = str(key).strip()
+        normalized_key = re.sub(r"^(-?\d+)\.0+$", r"\1", normalized_key)
+        normalized_map_aperturas[normalized_key] = value
+
+    # NaN/None se tratan como "", luego se convierte a texto y se hace strip.
+    normalized_values = df_user[col].fillna("").astype(str).str.strip()
+    normalized_values = normalized_values.str.replace(r"^(-?\d+)\.0+$", r"\1", regex=True)
+
+    # Si hay equivalencia, usamos el valor mapeado; si no, conservamos el valor original normalizado.
+    mapped_values = normalized_values.map(normalized_map_aperturas)
+    df_user[col] = mapped_values.where(mapped_values.notna(), normalized_values)
+
+    return df_user
+
+
 
 def transform_dataframe(df: pd.DataFrame, project_id: str, df_materiales: pd.DataFrame) -> pd.DataFrame:
     """Transformación de plantilla según requisitos del cliente."""
@@ -452,6 +485,7 @@ if uploaded_file is not None:
 
         # Aplicamos plantilla de transformación.
         final_df = transform_dataframe(original_df, project_id, df_materiales)
+        final_df = transform_apertura(final_df, map_aperturas, col="Apertura")
 
         st.markdown(
             f"<p style='font-size:2.25rem;font-weight:600;margin:0;'>{final_df.shape[0]} piezas</p>",
