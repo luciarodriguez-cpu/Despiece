@@ -338,23 +338,6 @@ def transform_material_to_core_gama_acabado(
     return transformed
 
 
-# Ejemplo mínimo de uso:
-# if __name__ == "__main__":
-#     df_user_example = pd.DataFrame(
-#         {
-#             "Material": ["wood horizontal roble natural", "LACA algo", "SINMATCH xyz"],
-#             "OtraColumna": [1, 2, 3],
-#         }
-#     )
-#     df_materiales_example = pd.DataFrame(
-#         {
-#             "Material": ["WOOD", "LACA"],
-#             "Core": ["MDF", "MDF"],
-#             "Gama": ["WOO", "LAC"],
-#         }
-#     )
-#     print(transform_material_to_core_gama_acabado(df_user_example, df_materiales_example))
-
 
 def transform_dataframe(df: pd.DataFrame, project_id: str, df_materiales: pd.DataFrame) -> pd.DataFrame:
     """Transformación de plantilla según requisitos del cliente."""
@@ -448,8 +431,7 @@ if uploaded_file is not None:
         # Carga interna de base de datos (sin mostrarla en la UI).
         df_dimensiones, df_materiales, map_aperturas, map_tiradores = get_database()
 
-        # Variables reservadas para futuras reglas de transformación con BBDD.
-        _ = (df_dimensiones, df_materiales, map_aperturas, map_tiradores)
+        _ = (df_dimensiones, map_aperturas, map_tiradores)
 
         # Leemos el CSV de forma segura.
         original_df, delimiter_used, encoding_used = load_csv(uploaded_file)
