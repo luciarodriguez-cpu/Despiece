@@ -424,7 +424,7 @@ def transform_tiradores(df_user: pd.DataFrame, map_tiradores: dict) -> pd.DataFr
 
 def transform_trasera_tirador(df: pd.DataFrame) -> pd.DataFrame:
     """Genera/sobrescribe la columna final 'Trasera Tirador' según reglas de negocio."""
-    required_columns = ["Tirador", "TraseraTirador", "ColorTirador", "Acabado"]
+    required_columns = ["Tirador", "TraseraTirador", "Colortirador", "Acabado"]
     missing_columns = [column for column in required_columns if column not in df.columns]
     if missing_columns:
         missing_list = ", ".join(missing_columns)
@@ -458,7 +458,7 @@ def transform_trasera_tirador(df: pd.DataFrame) -> pd.DataFrame:
         if tirador_value == "U-Shape)":
             return _normalize_text(row["Acabado"]).upper()
 
-        return _normalize_text(row["ColorTirador"]).upper()
+        return _normalize_text(row["Colortirador"]).upper()
 
     trasera_tirador = transformed.apply(_compute_row, axis=1)
 
