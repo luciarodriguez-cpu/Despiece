@@ -500,9 +500,9 @@ def transform_dataframe(
     transformed.insert(0, "ID Proyecto", project_id)
 
     # 8) Ajustes de columnas para salida final.
-    obs_origen_column = find_column_name(transformed.columns, "Obs de origen")
-    if obs_origen_column is not None and obs_origen_column != "Observaciones":
-        transformed = transformed.rename(columns={obs_origen_column: "Observaciones"})
+    obs_column = find_column_name(transformed.columns, "Obs")
+    if obs_column is not None and obs_column != "Observaciones":
+        transformed = transformed.rename(columns={obs_column: "Observaciones"})
 
     removable_columns = [
         col_name
