@@ -326,7 +326,7 @@ def transform_material_to_core_gama_acabado(
     # Evita conflictos si el CSV de usuario ya trae estas columnas.
     target_columns = ["Core", "Gama", "Acabado"]
     existing_target_columns = [
-        column_name for column_name in target_columns if column_name in transformed.columns
+        c for c in target_columns if c in transformed.columns
     ]
     if existing_target_columns:
         transformed = transformed.drop(columns=existing_target_columns)
