@@ -499,6 +499,19 @@ def transform_dataframe(
     # 7) Insertar la columna ID Proyecto en primera posición.
     transformed.insert(0, "ID Proyecto", project_id)
 
+    # 8) Ajustes de columnas para salida final.
+    obs_column = find_column_name(transformed.columns, "Obs")
+    if obs_column is not None and obs_column != "Observaciones":
+        transformed = transformed.rename(columns={obs_column: "Observaciones"})
+
+    removable_columns = [
+        col_name
+        for col_name in ["Tirador(0=sin tirador)", "Hidden"]
+        if find_column_name(transformed.columns, col_name) is not None
+    ]
+    if removable_columns:
+        transformed = transformed.drop(columns=removable_columns)
+
     return transformed.reset_index(drop=True)
 
 
@@ -547,11 +560,24 @@ if uploaded_file is not None:
         )
 
         st.subheader(f"3) Resultado transformado ({PREVIEW_ROWS} piezas visibles)")
-        st.dataframe(
-            final_df,
-            width="stretch",
-            height=PREVIEW_HEIGHT,
-        )
+
+        editable_column = find_column_name(final_df.columns, "Observaciones")
+        disabled_columns = [col for col in final_df.columns if col != editable_column]
+
+        if editable_column is not None:
+            final_df = st.data_editor(
+                final_df,
+                width="stretch",
+                height=PREVIEW_HEIGHT,
+                num_rows="fixed",
+                disabled=disabled_columns,
+            )
+        else:
+            st.dataframe(
+                final_df,
+                width="stretch",
+                height=PREVIEW_HEIGHT,
+            )
 
         csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
