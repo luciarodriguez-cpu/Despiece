@@ -422,78 +422,6 @@ def transform_tiradores(df_user: pd.DataFrame, map_tiradores: dict) -> pd.DataFr
     return transformed
 
 
-def transform_trasera_tirador(
-    df: pd.DataFrame,
-    source_df: pd.DataFrame | None = None,
-) -> pd.DataFrame:
-    """Genera/sobrescribe 'Trasera Tirador' usando campos de origen del CSV."""
-    source = df if source_df is None else source_df
-
-    required_columns = ["Tirador", "Acabado"]
-    missing_columns = [column for column in required_columns if column not in df.columns]
-    source_required_columns = ["TraseraTirador", "Colortirador"]
-    missing_source_columns = [
-        column for column in source_required_columns if column not in source.columns
-    ]
-    missing_columns.extend(missing_source_columns)
-    if missing_columns:
-        missing_list = ", ".join(missing_columns)
-        raise ValueError(f"Faltan columnas requeridas para 'Trasera Tirador': {missing_list}.")
-
-    transformed = df.copy()
-
-    source_trasera_tirador = (
-        source["TraseraTirador"].reset_index(drop=True).reindex(range(len(transformed)))
-    )
-    source_color_tirador = (
-        source["Colortirador"].reset_index(drop=True).reindex(range(len(transformed)))
-    )
-
-    def _normalize_text(value: object) -> str:
-        if pd.isna(value):
-            return ""
-        return str(value).strip()
-
-    def _from_trasera_tirador(value: object) -> str:
-        normalized = _normalize_text(value)
-        if not normalized:
-            return ""
-
-        words = normalized.split()
-        words = words[:-1] if words else []
-        filtered_words = [word for word in words if word.upper() != "WOOD"]
-        return " ".join(filtered_words).upper()
-
-    trasera_tirador_values: list[str] = []
-    for row_pos in range(len(transformed)):
-        tirador_value = _normalize_text(transformed.iloc[row_pos]["Tirador"])
-        if tirador_value == "":
-            trasera_tirador_values.append("")
-            continue
-
-        if tirador_value in {"Pill", "Round", "Square"}:
-            trasera_tirador_values.append(
-                _from_trasera_tirador(source_trasera_tirador.iloc[row_pos])
-            )
-            continue
-
-        if tirador_value == "U-Shape)":
-            trasera_tirador_values.append(
-                _normalize_text(transformed.iloc[row_pos]["Acabado"]).upper()
-            )
-            continue
-
-        trasera_tirador_values.append(
-            _normalize_text(source_color_tirador.iloc[row_pos]).upper()
-        )
-
-    if "Trasera Tirador" in transformed.columns:
-        transformed = transformed.drop(columns=["Trasera Tirador"])
-    transformed.insert(len(transformed.columns), "Trasera Tirador", trasera_tirador_values)
-
-    return transformed
-
-
 def transform_dataframe(
     df: pd.DataFrame,
     project_id: str,
@@ -526,8 +454,6 @@ def transform_dataframe(
     if hidden_column is not None:
         hidden_values = transformed[hidden_column].astype("string").str.strip()
         transformed = transformed[~hidden_values.str.fullmatch(r"1(?:\.0+)?", na=False)].copy()
-
-    source_for_trasera_tirador = transformed.copy()
 
     # 3) Reglas de reordenación Lenx/LenY/LenZ por tipología.
     transformed = apply_typology_dimension_rules(transformed)
@@ -577,14 +503,9 @@ def transform_dataframe(
     if obs_column is not None and obs_column != "Observaciones":
         transformed = transformed.rename(columns={obs_column: "Observaciones"})
 
-    transformed = transform_trasera_tirador(
-        transformed,
-        source_df=source_for_trasera_tirador,
-    )
-
     removable_columns = [
         col_name
-        for col_name in ["Tirador(0=sin tirador)", "Hidden", "TraseraTirador", "Colortirador"]
+        for col_name in ["Tirador(0=sin tirador)", "Hidden"]
         if find_column_name(transformed.columns, col_name) is not None
     ]
     if removable_columns:
