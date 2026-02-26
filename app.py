@@ -444,6 +444,7 @@ def add_trasera_tirador(transformed: pd.DataFrame, source_df: pd.DataFrame) -> p
         )
 
     tirador_clean = transformed["Tirador"].fillna("").astype(str).str.strip()
+    tirador_key = tirador_clean.str.lower()
     tirador_empty = tirador_clean == ""
 
     trasera_base = source_df["TraseraTirador"].fillna("").astype(str).str.strip()
@@ -461,8 +462,8 @@ def add_trasera_tirador(transformed: pd.DataFrame, source_df: pd.DataFrame) -> p
     acabado_upper = transformed["Acabado"].fillna("").astype(str).str.strip().str.upper()
     colortirador_upper = source_df["Colortirador"].fillna("").astype(str).str.strip().str.upper()
 
-    mask_shapes = tirador_clean.isin(["Pill", "Round", "Square"])
-    mask_u_shape = tirador_clean == "U-Shape"
+    mask_u_shape = tirador_key == "u-shape"
+    mask_shapes = tirador_key.isin(["pill", "round", "square"])
     mask_other = (~tirador_empty) & (~mask_shapes) & (~mask_u_shape)
 
     missing_shapes = mask_shapes & (trasera_base == "")
@@ -500,9 +501,24 @@ def add_trasera_tirador(transformed: pd.DataFrame, source_df: pd.DataFrame) -> p
         )
 
     result = transformed.copy()
+    insert_pos = len(result.columns)
+    if "TraseraTirador" in source_df.columns:
+        source_insert_pos = int(source_df.columns.get_loc("TraseraTirador"))
+        insert_pos = min(source_insert_pos, len(result.columns))
+
     if "Trasera Tirador" in result.columns:
         result = result.drop(columns=["Trasera Tirador"])
-    result["Trasera Tirador"] = trasera_tirador
+
+    result.insert(insert_pos, "Trasera Tirador", trasera_tirador)
+
+    drop_columns = [
+        col_name
+        for col_name in ["TraseraTirador", "Colortirador", "ColorTirador"]
+        if col_name in result.columns
+    ]
+    if drop_columns:
+        result = result.drop(columns=drop_columns)
+
     return result
 
 
@@ -538,7 +554,7 @@ def transform_dataframe(
     if hidden_column is not None:
         hidden_values = transformed[hidden_column].astype("string").str.strip()
         transformed = transformed[~hidden_values.str.fullmatch(r"1(?:\.0+)?", na=False)].copy()
-    source_df = transformed.copy()
+    source_for_trasera = transformed.copy()
 
     # 3) Reglas de reordenación Lenx/LenY/LenZ por tipología.
     transformed = apply_typology_dimension_rules(transformed)
@@ -555,7 +571,14 @@ def transform_dataframe(
 
     # 5) Transformar Tirador/Tirador(0=sin tirador) con equivalencias y salida final en "Tirador".
     transformed = transform_tiradores(transformed, map_tiradores)
-    transformed = add_trasera_tirador(transformed, source_df)
+    transformed = add_trasera_tirador(transformed, source_for_trasera)
+    forbidden_columns = [
+        col_name
+        for col_name in ["TraseraTirador", "Colortirador", "ColorTirador"]
+        if col_name in transformed.columns
+    ]
+    if forbidden_columns:
+        transformed = transformed.drop(columns=forbidden_columns)
 
     # 6) Eliminar sufijo "mm" en columnas dimensionales de texto.
     dimensional_keywords = {
