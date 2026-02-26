@@ -422,6 +422,90 @@ def transform_tiradores(df_user: pd.DataFrame, map_tiradores: dict) -> pd.DataFr
     return transformed
 
 
+def add_trasera_tirador(transformed: pd.DataFrame, source_df: pd.DataFrame) -> pd.DataFrame:
+    """Añade/actualiza la columna final 'Trasera Tirador' con reglas de negocio."""
+    if not transformed.index.equals(source_df.index):
+        raise ValueError(
+            "Índices desalineados entre transformed y source_df. "
+            "Asegura que source_df esté filtrado con transformed.index."
+        )
+
+    if "Tirador" not in transformed.columns:
+        raise ValueError("No se encontró la columna 'Tirador' en transformed.")
+    if "Acabado" not in transformed.columns:
+        raise ValueError("No se encontró la columna 'Acabado' en transformed.")
+
+    required_source_columns = ["TraseraTirador", "Colortirador"]
+    missing_source_columns = [col for col in required_source_columns if col not in source_df.columns]
+    if missing_source_columns:
+        raise ValueError(
+            "source_df no tiene las columnas esperadas para Trasera Tirador. "
+            f"Faltan: {missing_source_columns}."
+        )
+
+    tirador_clean = transformed["Tirador"].fillna("").astype(str).str.strip()
+    tirador_empty = tirador_clean == ""
+
+    trasera_base = source_df["TraseraTirador"].fillna("").astype(str).str.strip()
+    trasera_processed = (
+        trasera_base
+        .str.split()
+        .str[:-1]
+        .str.join(" ")
+        .str.replace(r"\bWOOD\b", "", regex=True)
+        .str.replace(r"\s+", " ", regex=True)
+        .str.strip()
+        .str.upper()
+    )
+
+    acabado_upper = transformed["Acabado"].fillna("").astype(str).str.strip().str.upper()
+    colortirador_upper = source_df["Colortirador"].fillna("").astype(str).str.strip().str.upper()
+
+    mask_shapes = tirador_clean.isin(["Pill", "Round", "Square"])
+    mask_u_shape = tirador_clean == "U-Shape"
+    mask_other = (~tirador_empty) & (~mask_shapes) & (~mask_u_shape)
+
+    missing_shapes = mask_shapes & (trasera_base == "")
+    missing_u_shape = mask_u_shape & (acabado_upper == "")
+    missing_other = mask_other & (colortirador_upper == "")
+
+    def _raise_missing(mask: pd.Series, missing_field: str) -> None:
+        if not mask.any():
+            return
+        tirador_examples = tirador_clean[mask].drop_duplicates().head(10).tolist()
+        raise ValueError(
+            "Trasera Tirador no puede quedar vacía para Tirador no vacío. "
+            f"Filas afectadas: {int(mask.sum())}. "
+            f"Ejemplos Tirador: {tirador_examples}. "
+            f"Campo faltaba: {missing_field}."
+        )
+
+    _raise_missing(missing_shapes, "TraseraTirador")
+    _raise_missing(missing_u_shape, "Acabado")
+    _raise_missing(missing_other, "Colortirador")
+
+    trasera_tirador = pd.Series("", index=transformed.index, dtype="string")
+    trasera_tirador = trasera_tirador.mask(mask_shapes, trasera_processed)
+    trasera_tirador = trasera_tirador.mask(mask_u_shape, acabado_upper)
+    trasera_tirador = trasera_tirador.mask(mask_other, colortirador_upper)
+
+    invalid_global = (~tirador_empty) & (trasera_tirador.fillna("").astype(str).str.strip() == "")
+    if invalid_global.any():
+        tirador_examples = tirador_clean[invalid_global].drop_duplicates().head(10).tolist()
+        raise ValueError(
+            "Trasera Tirador no puede quedar vacía para Tirador no vacío. "
+            f"Filas afectadas: {int(invalid_global.sum())}. "
+            f"Ejemplos Tirador: {tirador_examples}. "
+            "Campo faltaba: indeterminado."
+        )
+
+    result = transformed.copy()
+    if "Trasera Tirador" in result.columns:
+        result = result.drop(columns=["Trasera Tirador"])
+    result["Trasera Tirador"] = trasera_tirador
+    return result
+
+
 def transform_dataframe(
     df: pd.DataFrame,
     project_id: str,
@@ -454,6 +538,7 @@ def transform_dataframe(
     if hidden_column is not None:
         hidden_values = transformed[hidden_column].astype("string").str.strip()
         transformed = transformed[~hidden_values.str.fullmatch(r"1(?:\.0+)?", na=False)].copy()
+    source_df = transformed.copy()
 
     # 3) Reglas de reordenación Lenx/LenY/LenZ por tipología.
     transformed = apply_typology_dimension_rules(transformed)
@@ -470,6 +555,7 @@ def transform_dataframe(
 
     # 5) Transformar Tirador/Tirador(0=sin tirador) con equivalencias y salida final en "Tirador".
     transformed = transform_tiradores(transformed, map_tiradores)
+    transformed = add_trasera_tirador(transformed, source_df)
 
     # 6) Eliminar sufijo "mm" en columnas dimensionales de texto.
     dimensional_keywords = {
