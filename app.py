@@ -1,5 +1,4 @@
 import csv
-import hashlib
 import html
 import re
 from io import BytesIO, StringIO
@@ -1014,14 +1013,11 @@ if uploaded_files:
 
         original_dfs: list[pd.DataFrame] = []
         seen_names: set[str] = set()
-        seen_hashes: dict[str, str] = {}
 
         transformed_dfs: list[pd.DataFrame] = []
         source_subtitles: list[str] = []
         for file_position, uploaded_file in enumerate(uploaded_files, start=1):
-            file_name = uploaded_file.name.strip()
-            file_bytes = uploaded_file.getvalue()
-            file_hash = hashlib.sha256(file_bytes).hexdigest()
+            file_name = uploaded_file.name or ""
 
             # Leemos cada CSV de forma segura.
             original_df, delimiter_used, encoding_used = load_csv(uploaded_file)
@@ -1029,18 +1025,11 @@ if uploaded_files:
 
             if file_name in seen_names:
                 raise ValueError(
-                    f"No se permite subir el mismo CSV dos veces: '{file_name}'."
-                )
-
-            if file_hash in seen_hashes:
-                repeated_file_name = seen_hashes[file_hash]
-                raise ValueError(
-                    "No se permite subir el mismo CSV dos veces. "
-                    f"'{file_name}' tiene el mismo contenido que '{repeated_file_name}'."
+                    "No se permite subir varios CSV con el mismo nombre exacto. "
+                    f"Nombre repetido: '{file_name}'."
                 )
 
             seen_names.add(file_name)
-            seen_hashes[file_hash] = file_name
 
             project_id = get_project_id_from_filename(uploaded_file.name)
             try:
