@@ -1016,7 +1016,6 @@ if uploaded_files:
         seen_hashes: dict[str, str] = {}
 
         transformed_dfs: list[pd.DataFrame] = []
-        section_subtitles: list[str] = []
         for file_position, uploaded_file in enumerate(uploaded_files, start=1):
             file_name = uploaded_file.name.strip()
             file_bytes = uploaded_file.getvalue()
@@ -1059,7 +1058,6 @@ if uploaded_files:
                 apply_name_prefix=len(uploaded_files) > 1,
             )
             transformed_dfs.append(transformed_df)
-            section_subtitles.append(get_project_subtitle_from_filename(uploaded_file.name))
 
         final_df = pd.concat(transformed_dfs, ignore_index=True)
 
@@ -1068,9 +1066,7 @@ if uploaded_files:
             unsafe_allow_html=True,
         )
 
-        st.subheader(f"3) Resultado transformado combinado ({PREVIEW_ROWS} piezas visibles)")
-        sectioned_table_html = render_sectioned_result_table(transformed_dfs, section_subtitles)
-        st.markdown(sectioned_table_html, unsafe_allow_html=True)
+        st.subheader("3) Resultado transformado combinado")
 
         editable_column = find_column_name(final_df.columns, "Observaciones")
         disabled_columns = [col for col in final_df.columns if col != editable_column]
