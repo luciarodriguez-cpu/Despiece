@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import html
 import re
 from io import BytesIO, StringIO
@@ -1012,11 +1013,15 @@ if uploaded_files:
 
         original_dfs: list[pd.DataFrame] = []
         seen_names: set[str] = set()
-        seen_hashes: set[str] = set()
+        seen_hashes: dict[str, str] = {}
 
         transformed_dfs: list[pd.DataFrame] = []
         section_subtitles: list[str] = []
         for file_position, uploaded_file in enumerate(uploaded_files, start=1):
+            file_name = uploaded_file.name.strip()
+            file_bytes = uploaded_file.getvalue()
+            file_hash = hashlib.sha256(file_bytes).hexdigest()
+
             # Leemos cada CSV de forma segura.
             original_df, delimiter_used, encoding_used = load_csv(uploaded_file)
             original_dfs.append(original_df)
@@ -1035,9 +1040,6 @@ if uploaded_files:
 
             seen_names.add(file_name)
             seen_hashes[file_hash] = file_name
-
-            # Leemos cada CSV de forma segura.
-            original_df, _, _ = load_csv(uploaded_file)
 
             project_id = get_project_id_from_filename(uploaded_file.name)
             try:
