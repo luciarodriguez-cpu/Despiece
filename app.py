@@ -182,6 +182,53 @@ def get_project_id_from_filename(filename: str) -> str:
     return f"{letters.upper()}-{numbers}"
 
 
+def get_project_subtitle_from_filename(filename: str) -> str:
+    """Extrae el texto posterior al prefijo LL-NNNNN para usarlo como subtítulo."""
+    clean_name = (filename or "").strip()
+    stem = clean_name.rsplit(".", 1)[0].strip()
+
+    match = re.match(r"^[A-Za-z]{2}-\d{5}(.*)$", stem)
+    if not match:
+        return stem
+
+    subtitle = match.group(1).strip()
+    subtitle = subtitle.lstrip("-_ ").strip()
+    return subtitle or stem
+
+
+def add_section_title_rows(dataframes: list[pd.DataFrame], subtitles: list[str]) -> pd.DataFrame:
+    """Inserta una fila de título por cada CSV de origen en el resultado combinado."""
+    if not dataframes:
+        return pd.DataFrame()
+
+    combined_parts: list[pd.DataFrame] = []
+
+    for index, df in enumerate(dataframes):
+        subtitle = subtitles[index] if index < len(subtitles) else f"Bloque {index + 1}"
+        title_text = f"{subtitle}"
+
+        title_row = pd.DataFrame([{column_name: title_text for column_name in df.columns}])
+        combined_parts.append(title_row)
+        combined_parts.append(df)
+
+    return pd.concat(combined_parts, ignore_index=True)
+
+
+def style_section_title_rows(df: pd.DataFrame, subtitles: list[str]):
+    """Aplica estilo visual a filas de subtítulo para destacarlas en toda la tabla."""
+    subtitle_set = {subtitle for subtitle in subtitles if subtitle}
+
+    def row_style(row: pd.Series) -> list[str]:
+        first_value = str(row.iloc[0]).strip() if len(row) > 0 else ""
+        if first_value in subtitle_set:
+            return [
+                "background-color: #f0f0f0; font-weight: 700; font-size: 1.05rem;"
+            ] * len(row)
+        return [""] * len(row)
+
+    return df.style.apply(row_style, axis=1)
+
+
 def find_column_name(columns: pd.Index, target_name: str) -> str | None:
     """Busca una columna ignorando mayúsculas/minúsculas y espacios extremos."""
     normalized_target = target_name.strip().lower()
@@ -678,6 +725,7 @@ if uploaded_files:
 
         original_dfs: list[pd.DataFrame] = []
         transformed_dfs: list[pd.DataFrame] = []
+        section_subtitles: list[str] = []
 
         for uploaded_file in uploaded_files:
             # Leemos cada CSV de forma segura.
@@ -702,9 +750,10 @@ if uploaded_files:
             transformed_df = transform_dataframe(original_df, project_id, df_materiales, map_tiradores)
             transformed_df = transform_apertura(transformed_df, map_aperturas, col="Apertura")
             transformed_dfs.append(transformed_df)
+            section_subtitles.append(get_project_subtitle_from_filename(uploaded_file.name))
 
         original_preview_df = pd.concat(original_dfs, ignore_index=True)
-        final_df = pd.concat(transformed_dfs, ignore_index=True)
+        final_df = add_section_title_rows(transformed_dfs, section_subtitles)
 
         st.subheader(f"2) Vista previa original combinada ({PREVIEW_ROWS} piezas visibles)")
         st.dataframe(original_preview_df, width="stretch", height=PREVIEW_HEIGHT)
@@ -716,30 +765,12 @@ if uploaded_files:
 
         st.subheader(f"3) Resultado transformado combinado ({PREVIEW_ROWS} piezas visibles)")
 
-        editable_column = find_column_name(final_df.columns, "Observaciones")
-        disabled_columns = [col for col in final_df.columns if col != editable_column]
-
-        if editable_column is not None:
-            final_df[editable_column] = final_df[editable_column].fillna("").astype("string")
-            final_df = st.data_editor(
-                final_df,
-                width="stretch",
-                height=PREVIEW_HEIGHT,
-                num_rows="fixed",
-                disabled=disabled_columns,
-                column_config={
-                    editable_column: st.column_config.TextColumn(
-                        "Observaciones",
-                        help="Puedes escribir texto libre con letras, números y símbolos.",
-                    )
-                },
-            )
-        else:
-            st.dataframe(
-                final_df,
-                width="stretch",
-                height=PREVIEW_HEIGHT,
-            )
+        styled_final_df = style_section_title_rows(final_df, section_subtitles)
+        st.dataframe(
+            styled_final_df,
+            width="stretch",
+            height=PREVIEW_HEIGHT,
+        )
 
         csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
