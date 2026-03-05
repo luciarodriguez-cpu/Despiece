@@ -539,6 +539,203 @@ def parse_dimension_to_float(value: object) -> float | None:
         return None
 
 
+def get_prefix_from_name(name: object) -> str:
+    """Obtiene prefijo de Name con patrón LETRA-; fallback a A."""
+    if pd.isna(name):
+        return "A"
+
+    match = re.match(r"^\s*([A-Za-z])-", str(name))
+    if match:
+        return match.group(1).upper()
+
+    return "A"
+
+
+def _prefix_to_source_index(prefix: str) -> int | None:
+    """Convierte prefijo alfabético (A, B, ..., AA) a índice 1-based."""
+    clean_prefix = (prefix or "").strip().upper()
+    if clean_prefix == "" or not clean_prefix.isalpha():
+        return None
+
+    value = 0
+    for character in clean_prefix:
+        value = value * 26 + (ord(character) - ord("A") + 1)
+    return value
+
+
+def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
+    """Recalcula barras de tipología R/RV agrupando tramos por barra equivalente."""
+    if final_df.empty:
+        return final_df.copy()
+
+    tipologia_column = find_column_name(final_df.columns, "Tipologia") or find_column_name(final_df.columns, "Tipología")
+    name_column = find_column_name(final_df.columns, "Name")
+    ancho_column = find_column_name(final_df.columns, "Ancho") or find_column_name(final_df.columns, "LenY")
+    tramo_column = find_column_name(final_df.columns, "Largo") or find_column_name(final_df.columns, "LenZ")
+    core_column = find_column_name(final_df.columns, "Core")
+    gama_column = find_column_name(final_df.columns, "Gama")
+    acabado_column = find_column_name(final_df.columns, "Acabado")
+    orden_column = find_column_name(final_df.columns, "Orden CSV")
+    q_column = find_column_name(final_df.columns, "Q")
+    id_proyecto_column = find_column_name(final_df.columns, "ID Proyecto")
+    sku_column = find_column_name(final_df.columns, "SKU")
+
+    if tipologia_column is None or ancho_column is None or tramo_column is None:
+        return final_df.copy()
+
+    def _normalize_text(value: object) -> str:
+        if pd.isna(value):
+            return ""
+        return str(value).strip().upper()
+
+    def _prefix_from_row(row: pd.Series) -> str:
+        prefix = get_prefix_from_name(row.get(name_column) if name_column is not None else "")
+        if prefix != "A":
+            return prefix
+
+        for source_column in [orden_column, q_column]:
+            if source_column is None:
+                continue
+
+            source_value = row.get(source_column)
+            if pd.isna(source_value):
+                continue
+
+            source_text = str(source_value).strip()
+            if source_text == "":
+                continue
+
+            if source_text.isdigit() and int(source_text) > 0:
+                return get_source_letter_prefix(int(source_text)).rstrip("-") or "A"
+
+            source_match = re.match(r"^\s*([A-Za-z])", source_text)
+            if source_match:
+                return source_match.group(1).upper()
+
+        return "A"
+
+    tip_series = final_df[tipologia_column].fillna("").astype(str).str.strip().str.upper()
+    rr_mask = tip_series.isin(["R", "RV"])
+    if not rr_mask.any():
+        return final_df.copy()
+
+    grouped_lengths: dict[tuple[str, float, str, str, str], float] = {}
+    grouped_sources: dict[tuple[str, float, str, str, str], dict[str, str]] = {}
+    valid_rr_indexes: list[int] = []
+
+    should_use_prefix = False
+    if orden_column is not None:
+        order_values = final_df[orden_column].fillna("").astype(str).str.strip()
+        should_use_prefix = order_values[order_values != ""].nunique() > 1
+    elif name_column is not None:
+        name_values = final_df[name_column].fillna("").astype(str)
+        should_use_prefix = name_values.str.match(r"^\s*[A-Za-z]-").any()
+
+    next_r_index_by_prefix: dict[str, int] = {}
+    if name_column is not None:
+        preserved_tip_mask = ~rr_mask
+        if preserved_tip_mask.any():
+            for _, preserved_row in final_df.loc[preserved_tip_mask].iterrows():
+                raw_name = preserved_row.get(name_column)
+                if pd.isna(raw_name):
+                    continue
+
+                name_text = str(raw_name).strip().upper()
+                if should_use_prefix:
+                    match = re.match(r"^\s*([A-Za-z])\s*-\s*R(\d+)\s*$", name_text)
+                    if not match:
+                        continue
+                    prefix_name = match.group(1)
+                    index_value = int(match.group(2))
+                else:
+                    match = re.match(r"^\s*R(\d+)\s*$", name_text)
+                    if not match:
+                        continue
+                    prefix_name = ""
+                    index_value = int(match.group(1))
+
+                next_r_index_by_prefix[prefix_name] = max(next_r_index_by_prefix.get(prefix_name, 0), index_value)
+
+    for row_index in final_df.index[rr_mask]:
+        row = final_df.loc[row_index]
+        ancho_value = parse_dimension_to_float(row.get(ancho_column))
+        tramo_value = parse_dimension_to_float(row.get(tramo_column))
+        if ancho_value is None or tramo_value is None:
+            continue
+
+        group_key = (
+            _prefix_from_row(row),
+            float(ancho_value),
+            _normalize_text(row.get(core_column)) if core_column is not None else "",
+            _normalize_text(row.get(gama_column)) if gama_column is not None else "",
+            _normalize_text(row.get(acabado_column)) if acabado_column is not None else "",
+        )
+        grouped_lengths[group_key] = grouped_lengths.get(group_key, 0.0) + float(tramo_value)
+
+        if group_key not in grouped_sources:
+            source_meta: dict[str, str] = {}
+            if orden_column is not None:
+                raw_order = row.get(orden_column)
+                source_meta["orden"] = "" if pd.isna(raw_order) else str(raw_order).strip()
+            if q_column is not None:
+                raw_q = row.get(q_column)
+                source_meta["q"] = "" if pd.isna(raw_q) else str(raw_q).strip()
+            if id_proyecto_column is not None:
+                raw_project_id = row.get(id_proyecto_column)
+                source_meta["id_proyecto"] = "" if pd.isna(raw_project_id) else str(raw_project_id).strip()
+            grouped_sources[group_key] = source_meta
+
+        valid_rr_indexes.append(row_index)
+
+    if not valid_rr_indexes:
+        return final_df.copy()
+
+    preserved_df = final_df.drop(index=valid_rr_indexes).copy()
+
+    new_rows: list[dict[str, object]] = []
+    for (prefix, ancho, core, gama, acabado), total_length in grouped_lengths.items():
+        n_barras = int(math.ceil(total_length / 2300))
+        for _ in range(1, n_barras + 1):
+            new_row = {column_name: "" for column_name in final_df.columns}
+            new_row[tipologia_column] = "R"
+            if name_column is not None:
+                counter_key = prefix if should_use_prefix else ""
+                next_index = next_r_index_by_prefix.get(counter_key, 0) + 1
+                next_r_index_by_prefix[counter_key] = next_index
+                new_row[name_column] = f"{prefix}-R{next_index}" if should_use_prefix else f"R{next_index}"
+            if sku_column is not None:
+                new_row[sku_column] = "R"
+            new_row[ancho_column] = str(int(round(ancho)))
+            new_row[tramo_column] = "2400"
+            if core_column is not None:
+                new_row[core_column] = core
+            if gama_column is not None:
+                new_row[gama_column] = gama
+            if acabado_column is not None:
+                new_row[acabado_column] = acabado
+
+            source_meta = grouped_sources.get((prefix, ancho, core, gama, acabado), {})
+            if orden_column is not None:
+                order_value = source_meta.get("orden", "")
+                if order_value == "":
+                    source_index = _prefix_to_source_index(prefix)
+                    order_value = "" if source_index is None else str(source_index)
+                new_row[orden_column] = order_value
+
+            if q_column is not None and source_meta.get("q", "") != "":
+                new_row[q_column] = source_meta["q"]
+            if id_proyecto_column is not None and source_meta.get("id_proyecto", "") != "":
+                new_row[id_proyecto_column] = source_meta["id_proyecto"]
+
+            new_rows.append(new_row)
+
+    if not new_rows:
+        return preserved_df.reset_index(drop=True)
+
+    recalculated_df = pd.DataFrame(new_rows, columns=final_df.columns)
+    return pd.concat([preserved_df, recalculated_df], ignore_index=True)
+
+
 def fit_dimensions_to_standards(
     final_df: pd.DataFrame,
     df_dimensiones: pd.DataFrame,
@@ -1406,6 +1603,7 @@ if uploaded_files:
 
         final_df = pd.concat(transformed_dfs, ignore_index=True)
         final_df = fit_dimensions_to_standards(final_df, df_dimensiones, tolerance=1.75)
+        final_df = recalculate_r_bars(final_df)
         final_df = reorder_result_columns(final_df)
 
         st.markdown(
