@@ -197,6 +197,22 @@ def get_project_subtitle_from_filename(filename: str) -> str:
     return subtitle or stem
 
 
+def add_source_file_order_column(
+    df: pd.DataFrame,
+    source_index: int,
+    column_name: str = "Orden CSV",
+) -> pd.DataFrame:
+    """Añade una columna con el número de orden del CSV de origen (1, 2, 3, ...)."""
+    with_source = df.copy()
+
+    if column_name in with_source.columns:
+        with_source = with_source.drop(columns=[column_name])
+
+    insert_position = 1 if "ID Proyecto" in with_source.columns else 0
+    with_source.insert(insert_position, column_name, str(source_index))
+    return with_source
+
+
 def add_section_title_rows(dataframes: list[pd.DataFrame], subtitles: list[str]) -> pd.DataFrame:
     """Inserta una fila de título por cada CSV de origen en el resultado combinado."""
     if not dataframes:
@@ -779,7 +795,7 @@ if uploaded_files:
         transformed_dfs: list[pd.DataFrame] = []
         section_subtitles: list[str] = []
 
-        for uploaded_file in uploaded_files:
+        for file_position, uploaded_file in enumerate(uploaded_files, start=1):
             # Leemos cada CSV de forma segura.
             original_df, delimiter_used, encoding_used = load_csv(uploaded_file)
             original_dfs.append(original_df)
@@ -801,6 +817,7 @@ if uploaded_files:
             # Aplicamos plantilla de transformación por archivo y lo acumulamos.
             transformed_df = transform_dataframe(original_df, project_id, df_materiales, map_tiradores)
             transformed_df = transform_apertura(transformed_df, map_aperturas, col="Apertura")
+            transformed_df = add_source_file_order_column(transformed_df, file_position)
             transformed_dfs.append(transformed_df)
             section_subtitles.append(get_project_subtitle_from_filename(uploaded_file.name))
 
