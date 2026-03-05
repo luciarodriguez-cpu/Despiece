@@ -539,6 +539,122 @@ def parse_dimension_to_float(value: object) -> float | None:
         return None
 
 
+def get_prefix_from_name(name: object) -> str:
+    """Obtiene prefijo de Name con patrón LETRA-; fallback a A."""
+    if pd.isna(name):
+        return "A"
+
+    match = re.match(r"^\s*([A-Za-z])-", str(name))
+    if match:
+        return match.group(1).upper()
+
+    return "A"
+
+
+def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
+    """Recalcula barras de tipología R/RV agrupando tramos por barra equivalente."""
+    if final_df.empty:
+        return final_df.copy()
+
+    tipologia_column = find_column_name(final_df.columns, "Tipologia") or find_column_name(final_df.columns, "Tipología")
+    name_column = find_column_name(final_df.columns, "Name")
+    ancho_column = find_column_name(final_df.columns, "Ancho") or find_column_name(final_df.columns, "LenY")
+    tramo_column = find_column_name(final_df.columns, "Largo") or find_column_name(final_df.columns, "LenZ")
+    core_column = find_column_name(final_df.columns, "Core")
+    gama_column = find_column_name(final_df.columns, "Gama")
+    acabado_column = find_column_name(final_df.columns, "Acabado")
+    orden_column = find_column_name(final_df.columns, "Orden CSV")
+    q_column = find_column_name(final_df.columns, "Q")
+
+    if tipologia_column is None or ancho_column is None or tramo_column is None:
+        return final_df.copy()
+
+    def _normalize_text(value: object) -> str:
+        if pd.isna(value):
+            return ""
+        return str(value).strip().upper()
+
+    def _prefix_from_row(row: pd.Series) -> str:
+        prefix = get_prefix_from_name(row.get(name_column) if name_column is not None else "")
+        if prefix != "A":
+            return prefix
+
+        for source_column in [orden_column, q_column]:
+            if source_column is None:
+                continue
+
+            source_value = row.get(source_column)
+            if pd.isna(source_value):
+                continue
+
+            source_text = str(source_value).strip()
+            if source_text == "":
+                continue
+
+            if source_text.isdigit() and int(source_text) > 0:
+                return get_source_letter_prefix(int(source_text)).rstrip("-") or "A"
+
+            source_match = re.match(r"^\s*([A-Za-z])", source_text)
+            if source_match:
+                return source_match.group(1).upper()
+
+        return "A"
+
+    tip_series = final_df[tipologia_column].fillna("").astype(str).str.strip().str.upper()
+    rr_mask = tip_series.isin(["R", "RV"])
+    if not rr_mask.any():
+        return final_df.copy()
+
+    grouped_lengths: dict[tuple[str, float, str, str, str], float] = {}
+    valid_rr_indexes: list[int] = []
+
+    for row_index in final_df.index[rr_mask]:
+        row = final_df.loc[row_index]
+        ancho_value = parse_dimension_to_float(row.get(ancho_column))
+        tramo_value = parse_dimension_to_float(row.get(tramo_column))
+        if ancho_value is None or tramo_value is None:
+            continue
+
+        group_key = (
+            _prefix_from_row(row),
+            float(ancho_value),
+            _normalize_text(row.get(core_column)) if core_column is not None else "",
+            _normalize_text(row.get(gama_column)) if gama_column is not None else "",
+            _normalize_text(row.get(acabado_column)) if acabado_column is not None else "",
+        )
+        grouped_lengths[group_key] = grouped_lengths.get(group_key, 0.0) + float(tramo_value)
+        valid_rr_indexes.append(row_index)
+
+    if not valid_rr_indexes:
+        return final_df.copy()
+
+    preserved_df = final_df.drop(index=valid_rr_indexes).copy()
+
+    new_rows: list[dict[str, object]] = []
+    for (prefix, ancho, core, gama, acabado), total_length in grouped_lengths.items():
+        n_barras = int(math.ceil(total_length / 2300))
+        for bar_index in range(1, n_barras + 1):
+            new_row = {column_name: "" for column_name in final_df.columns}
+            new_row[tipologia_column] = "R"
+            if name_column is not None:
+                new_row[name_column] = f"{prefix}-R{bar_index}"
+            new_row[ancho_column] = str(int(round(ancho)))
+            new_row[tramo_column] = "2400"
+            if core_column is not None:
+                new_row[core_column] = core
+            if gama_column is not None:
+                new_row[gama_column] = gama
+            if acabado_column is not None:
+                new_row[acabado_column] = acabado
+            new_rows.append(new_row)
+
+    if not new_rows:
+        return preserved_df.reset_index(drop=True)
+
+    recalculated_df = pd.DataFrame(new_rows, columns=final_df.columns)
+    return pd.concat([preserved_df, recalculated_df], ignore_index=True)
+
+
 def fit_dimensions_to_standards(
     final_df: pd.DataFrame,
     df_dimensiones: pd.DataFrame,
@@ -1406,6 +1522,7 @@ if uploaded_files:
 
         final_df = pd.concat(transformed_dfs, ignore_index=True)
         final_df = fit_dimensions_to_standards(final_df, df_dimensiones, tolerance=1.75)
+        final_df = recalculate_r_bars(final_df)
         final_df = reorder_result_columns(final_df)
 
         st.markdown(
