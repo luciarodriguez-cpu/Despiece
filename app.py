@@ -1,5 +1,5 @@
 import csv
-import html
+import hashlib
 import re
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -825,20 +825,32 @@ if uploaded_files:
 
         _ = (df_dimensiones, map_aperturas, map_tiradores)
 
-        original_dfs: list[pd.DataFrame] = []
+        seen_names: set[str] = set()
+        seen_hashes: dict[str, str] = {}
         transformed_dfs: list[pd.DataFrame] = []
-        section_subtitles: list[str] = []
-        multiple_sources = len(uploaded_files) > 1
 
-        for file_position, uploaded_file in enumerate(uploaded_files, start=1):
+        for uploaded_file in uploaded_files:
+            file_name = uploaded_file.name.strip()
+            file_bytes = uploaded_file.getvalue()
+            file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+            if file_name in seen_names:
+                raise ValueError(
+                    f"No se permite subir el mismo CSV dos veces: '{file_name}'."
+                )
+
+            if file_hash in seen_hashes:
+                repeated_file_name = seen_hashes[file_hash]
+                raise ValueError(
+                    "No se permite subir el mismo CSV dos veces. "
+                    f"'{file_name}' tiene el mismo contenido que '{repeated_file_name}'."
+                )
+
+            seen_names.add(file_name)
+            seen_hashes[file_hash] = file_name
+
             # Leemos cada CSV de forma segura.
-            original_df, delimiter_used, encoding_used = load_csv(uploaded_file)
-            original_dfs.append(original_df)
-
-            st.success(
-                f"{uploaded_file.name}: leído correctamente "
-                f"(encoding: {encoding_used}, separador detectado: '{delimiter_used}')."
-            )
+            original_df, _, _ = load_csv(uploaded_file)
 
             project_id = get_project_id_from_filename(uploaded_file.name)
             try:
@@ -852,40 +864,41 @@ if uploaded_files:
             # Aplicamos plantilla de transformación por archivo y lo acumulamos.
             transformed_df = transform_dataframe(original_df, project_id, df_materiales, map_tiradores)
             transformed_df = transform_apertura(transformed_df, map_aperturas, col="Apertura")
-            transformed_df = add_source_metadata_columns(
-                transformed_df,
-                file_position,
-                apply_name_prefix=multiple_sources,
-            )
             transformed_dfs.append(transformed_df)
-            if multiple_sources:
-                section_subtitles.append(get_project_subtitle_from_filename(uploaded_file.name))
 
-        original_preview_df = pd.concat(original_dfs, ignore_index=True)
-        if multiple_sources:
-            final_df = add_section_title_rows(transformed_dfs, section_subtitles)
-        else:
-            final_df = pd.concat(transformed_dfs, ignore_index=True)
-
-        st.subheader(f"2) Vista previa original combinada ({PREVIEW_ROWS} piezas visibles)")
-        st.dataframe(original_preview_df, width="stretch", height=PREVIEW_HEIGHT)
+        final_df = pd.concat(transformed_dfs, ignore_index=True)
 
         st.markdown(
             f"<p style='font-size:2.25rem;font-weight:600;margin:0;'>{final_df.shape[0]} piezas</p>",
             unsafe_allow_html=True,
         )
 
-        st.subheader(f"3) Resultado transformado combinado ({PREVIEW_ROWS} piezas visibles)")
+        st.subheader(f"2) Resultado transformado combinado ({PREVIEW_ROWS} piezas visibles)")
 
-        if multiple_sources:
-            sectioned_table_html = render_sectioned_result_table(transformed_dfs, section_subtitles)
-            st.markdown(sectioned_table_html, unsafe_allow_html=True)
+        editable_column = find_column_name(final_df.columns, "Observaciones")
+        disabled_columns = [col for col in final_df.columns if col != editable_column]
+
+        if editable_column is not None:
+            final_df[editable_column] = final_df[editable_column].fillna("").astype("string")
+            final_df = st.data_editor(
+                final_df,
+                width="stretch",
+                height=PREVIEW_HEIGHT,
+                num_rows="fixed",
+                disabled=disabled_columns,
+                column_config={
+                    editable_column: st.column_config.TextColumn(
+                        "Observaciones",
+                        help="Puedes escribir texto libre con letras, números y símbolos.",
+                    )
+                },
+            )
         else:
             st.dataframe(final_df, width="stretch", height=PREVIEW_HEIGHT)
 
         csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
-            label="4) Descargar CSV transformado",
+            label="3) Descargar CSV transformado",
             data=BytesIO(csv_output),
             file_name="resultado_transformado.csv",
             mime="text/csv",
