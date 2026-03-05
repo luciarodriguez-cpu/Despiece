@@ -12,6 +12,24 @@ st.set_page_config(page_title="Despiece", page_icon="📋", layout="wide")
 
 PREVIEW_ROWS = 10
 PREVIEW_HEIGHT = 390
+RESULT_COLUMN_ORDER = [
+    "ID Proyecto",
+    "SKU",
+    "Name",
+    "Tipología",
+    "LenY",
+    "LenZ",
+    "Core",
+    "Gama",
+    "Acabado",
+    "MECANIZADO",
+    "Tirador",
+    "PosicionTirador",
+    "Apertura",
+    "Trasera Tirador",
+    "Observaciones",
+    "Orden CSV",
+]
 
 EXPECTED_COLUMNS = {
     "dimensiones_estandar.csv": ["Tipologia", "Ancho", "Largo"],
@@ -324,6 +342,42 @@ def find_column_name(columns: pd.Index, target_name: str) -> str | None:
         if str(col).strip().lower() == normalized_target:
             return str(col)
     return None
+
+
+def reorder_result_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Reordena columnas de salida priorizando el orden funcional solicitado."""
+    reordered = df.copy()
+
+    tipologia_column = find_column_name(reordered.columns, "Tipologia")
+    if tipologia_column is not None and tipologia_column != "Tipología":
+        reordered = reordered.rename(columns={tipologia_column: "Tipología"})
+
+    available_order = [col for col in RESULT_COLUMN_ORDER if col in reordered.columns]
+    remaining_columns = [col for col in reordered.columns if col not in available_order]
+    return reordered[available_order + remaining_columns]
+
+
+def render_observaciones_editor(df: pd.DataFrame, editor_key: str) -> pd.DataFrame:
+    """Muestra el resultado permitiendo editar únicamente la columna Observaciones."""
+    if "Observaciones" not in df.columns:
+        st.dataframe(df, width="stretch", hide_index=True)
+        return df
+
+    disabled_columns = [col for col in df.columns if col != "Observaciones"]
+    return st.data_editor(
+        df,
+        width="stretch",
+        hide_index=True,
+        num_rows="fixed",
+        disabled=disabled_columns,
+        column_config={
+            "Observaciones": st.column_config.TextColumn(
+                "Observaciones",
+                help="Puedes editar esta columna antes de descargar el CSV.",
+            )
+        },
+        key=editor_key,
+    )
 
 
 def parse_numeric_dimension(value: object) -> float | None:
@@ -955,6 +1009,7 @@ def transform_dataframe(
     if removable_columns:
         transformed = transformed.drop(columns=removable_columns)
 
+    transformed = reorder_result_columns(transformed)
     return transformed.reset_index(drop=True)
 
 
@@ -1052,6 +1107,7 @@ if uploaded_files:
             source_subtitles.append(get_project_subtitle_from_filename(uploaded_file.name))
 
         final_df = pd.concat(transformed_dfs, ignore_index=True)
+        final_df = reorder_result_columns(final_df)
 
         st.markdown(
             f"<p style='font-size:2.25rem;font-weight:600;margin:0;'>{final_df.shape[0]} piezas</p>",
@@ -1061,6 +1117,8 @@ if uploaded_files:
         st.subheader("3) Resultado transformado combinado")
         sectioned_table_html = render_sectioned_result_table(transformed_dfs, source_subtitles)
         st.markdown(sectioned_table_html, unsafe_allow_html=True)
+        st.caption("Puedes editar la columna Observaciones en la tabla de abajo antes de descargar.")
+        final_df = render_observaciones_editor(final_df, "resultado_observaciones_editor")
 
         st.subheader("3) Revisión de Name")
         issues_df = detect_name_issues(final_df)
@@ -1115,6 +1173,7 @@ if uploaded_files:
 
                 if post_issues_df.empty:
                     st.success("Correcciones aplicadas. Names OK. Puedes descargar el CSV.")
+                    final_df = render_observaciones_editor(final_df, "resultado_observaciones_editor_post_fix")
                     csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
                     st.download_button(
                         label="4) Descargar CSV transformado",
