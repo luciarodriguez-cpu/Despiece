@@ -556,6 +556,20 @@ def transform_tiradores(df_user: pd.DataFrame, map_tiradores: dict) -> pd.DataFr
     return transformed
 
 
+def clear_posicion_tirador_when_tirador_empty(transformed: pd.DataFrame) -> pd.DataFrame:
+    """Vacía PosicionTirador cuando Tirador no tiene valor."""
+    tirador_column = find_column_name(transformed.columns, "Tirador")
+    posicion_column = find_column_name(transformed.columns, "PosicionTirador")
+
+    if tirador_column is None or posicion_column is None:
+        return transformed
+
+    result = transformed.copy()
+    tirador_empty = result[tirador_column].fillna("").astype(str).str.strip() == ""
+    result.loc[tirador_empty, posicion_column] = ""
+    return result
+
+
 def add_trasera_tirador(transformed: pd.DataFrame, source_df: pd.DataFrame) -> pd.DataFrame:
     """Añade/actualiza la columna final 'Trasera Tirador' con reglas de negocio."""
     if not transformed.index.equals(source_df.index):
@@ -705,6 +719,7 @@ def transform_dataframe(
 
     # 5) Transformar Tirador/Tirador(0=sin tirador) con equivalencias y salida final en "Tirador".
     transformed = transform_tiradores(transformed, map_tiradores)
+    transformed = clear_posicion_tirador_when_tirador_empty(transformed)
     transformed = add_trasera_tirador(transformed, source_for_trasera)
     forbidden_columns = [
         col_name
