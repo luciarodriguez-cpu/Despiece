@@ -913,6 +913,39 @@ def clear_posicion_tirador_when_tirador_empty(transformed: pd.DataFrame) -> pd.D
     return result
 
 
+def normalize_posicion_tirador_to_integer(transformed: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza PosicionTirador para que solo contenga enteros sin decimales."""
+    posicion_column = find_column_name(transformed.columns, "PosicionTirador")
+    if posicion_column is None:
+        return transformed
+
+    result = transformed.copy()
+    raw_values = result[posicion_column].fillna("").astype(str).str.strip()
+    non_empty_mask = raw_values != ""
+    if not non_empty_mask.any():
+        return result
+
+    numeric_values = pd.to_numeric(raw_values[non_empty_mask], errors="coerce")
+    invalid_numeric_mask = numeric_values.isna()
+    if invalid_numeric_mask.any():
+        invalid_examples = raw_values[non_empty_mask][invalid_numeric_mask].drop_duplicates().head(10).tolist()
+        raise ValueError(
+            "La columna 'PosicionTirador' solo admite números enteros sin decimales. "
+            f"Valores no numéricos detectados: {invalid_examples}."
+        )
+
+    non_integer_mask = (numeric_values % 1) != 0
+    if non_integer_mask.any():
+        invalid_examples = raw_values[non_empty_mask][non_integer_mask].drop_duplicates().head(10).tolist()
+        raise ValueError(
+            "La columna 'PosicionTirador' solo admite números enteros sin decimales. "
+            f"Valores con decimales detectados: {invalid_examples}."
+        )
+
+    result.loc[non_empty_mask, posicion_column] = numeric_values.astype(int).astype(str)
+    return result
+
+
 def add_trasera_tirador(transformed: pd.DataFrame, source_df: pd.DataFrame) -> pd.DataFrame:
     """Añade/actualiza la columna final 'Trasera Tirador' con reglas de negocio."""
     if not transformed.index.equals(source_df.index):
@@ -1063,6 +1096,7 @@ def transform_dataframe(
     # 5) Transformar Tirador/Tirador(0=sin tirador) con equivalencias y salida final en "Tirador".
     transformed = transform_tiradores(transformed, map_tiradores)
     transformed = clear_posicion_tirador_when_tirador_empty(transformed)
+    transformed = normalize_posicion_tirador_to_integer(transformed)
     transformed = add_trasera_tirador(transformed, source_for_trasera)
     forbidden_columns = [
         col_name
