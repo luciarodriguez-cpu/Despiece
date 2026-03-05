@@ -1171,14 +1171,8 @@ if uploaded_files:
             unsafe_allow_html=True,
         )
 
-        st.subheader("3) Resultado transformado combinado")
-        sectioned_table_html = render_sectioned_result_table(
-            [reorder_result_columns(df) for df in transformed_dfs],
-            source_subtitles,
-        )
-        st.markdown(sectioned_table_html, unsafe_allow_html=True)
-
-        st.caption("Puedes editar la columna Observaciones en la tabla inferior.")
+        st.subheader("3) Resultado transformado combinado (Observaciones editables)")
+        st.caption("La tabla incluye subtítulos por archivo y solo permite editar Observaciones.")
         sectioned_editor_df = build_sectioned_editor_dataframe(final_df, source_subtitles)
         edited_sectioned_editor_df = render_observaciones_editor(
             sectioned_editor_df,
