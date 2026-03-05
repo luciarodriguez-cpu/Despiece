@@ -1,4 +1,5 @@
 import csv
+import html
 import re
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -202,31 +203,82 @@ def add_section_title_rows(dataframes: list[pd.DataFrame], subtitles: list[str])
         return pd.DataFrame()
 
     combined_parts: list[pd.DataFrame] = []
+    first_column = str(dataframes[0].columns[0])
 
     for index, df in enumerate(dataframes):
         subtitle = subtitles[index] if index < len(subtitles) else f"Bloque {index + 1}"
-        title_text = f"{subtitle}"
 
-        title_row = pd.DataFrame([{column_name: title_text for column_name in df.columns}])
+        title_row = pd.DataFrame([{column_name: "" for column_name in df.columns}])
+        title_row.at[0, first_column] = subtitle
         combined_parts.append(title_row)
         combined_parts.append(df)
 
     return pd.concat(combined_parts, ignore_index=True)
 
 
-def style_section_title_rows(df: pd.DataFrame, subtitles: list[str]):
-    """Aplica estilo visual a filas de subtítulo para destacarlas en toda la tabla."""
-    subtitle_set = {subtitle for subtitle in subtitles if subtitle}
+def render_sectioned_result_table(dataframes: list[pd.DataFrame], subtitles: list[str]) -> str:
+    """Renderiza la tabla combinada con fila de subtítulo usando merge visual (colspan)."""
+    if not dataframes:
+        return ""
 
-    def row_style(row: pd.Series) -> list[str]:
-        first_value = str(row.iloc[0]).strip() if len(row) > 0 else ""
-        if first_value in subtitle_set:
-            return [
-                "background-color: #f0f0f0; font-weight: 700; font-size: 1.05rem;"
-            ] * len(row)
-        return [""] * len(row)
+    columns = [str(col) for col in dataframes[0].columns]
+    header_html = "".join(f"<th>{html.escape(col)}</th>" for col in columns)
 
-    return df.style.apply(row_style, axis=1)
+    body_rows: list[str] = []
+    for index, df in enumerate(dataframes):
+        subtitle = subtitles[index] if index < len(subtitles) else f"Bloque {index + 1}"
+        body_rows.append(
+            f"<tr class='section-row'><td colspan='{len(columns)}'>{html.escape(subtitle)}</td></tr>"
+        )
+
+        for _, row in df.iterrows():
+            cells: list[str] = []
+            for column_name in df.columns:
+                value = row[column_name]
+                text = "" if pd.isna(value) else str(value)
+                cells.append(f"<td>{html.escape(text)}</td>")
+            body_rows.append(f"<tr>{''.join(cells)}</tr>")
+
+    table_html = f"""
+    <style>
+      .sectioned-table-wrap {{
+        max-height: {PREVIEW_HEIGHT}px;
+        overflow: auto;
+        border: 1px solid rgba(49, 51, 63, 0.2);
+        border-radius: 0.5rem;
+      }}
+      table.sectioned-table {{
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }}
+      table.sectioned-table thead th {{
+        position: sticky;
+        top: 0;
+        background: white;
+        z-index: 1;
+      }}
+      table.sectioned-table th,
+      table.sectioned-table td {{
+        border: 1px solid rgba(49, 51, 63, 0.12);
+        padding: 0.35rem 0.5rem;
+        text-align: left;
+        white-space: nowrap;
+      }}
+      table.sectioned-table tr.section-row td {{
+        background: #f0f0f0;
+        font-weight: 700;
+        font-size: 1.02rem;
+      }}
+    </style>
+    <div class="sectioned-table-wrap">
+      <table class="sectioned-table">
+        <thead><tr>{header_html}</tr></thead>
+        <tbody>{''.join(body_rows)}</tbody>
+      </table>
+    </div>
+    """
+    return table_html
 
 
 def find_column_name(columns: pd.Index, target_name: str) -> str | None:
@@ -765,12 +817,8 @@ if uploaded_files:
 
         st.subheader(f"3) Resultado transformado combinado ({PREVIEW_ROWS} piezas visibles)")
 
-        styled_final_df = style_section_title_rows(final_df, section_subtitles)
-        st.dataframe(
-            styled_final_df,
-            width="stretch",
-            height=PREVIEW_HEIGHT,
-        )
+        sectioned_table_html = render_sectioned_result_table(transformed_dfs, section_subtitles)
+        st.markdown(sectioned_table_html, unsafe_allow_html=True)
 
         csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
