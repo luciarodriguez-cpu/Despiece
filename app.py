@@ -202,18 +202,31 @@ def add_section_title_rows(dataframes: list[pd.DataFrame], subtitles: list[str])
         return pd.DataFrame()
 
     combined_parts: list[pd.DataFrame] = []
-    first_column = str(dataframes[0].columns[0])
 
     for index, df in enumerate(dataframes):
         subtitle = subtitles[index] if index < len(subtitles) else f"Bloque {index + 1}"
+        title_text = f"{subtitle}"
 
-        title_row = pd.DataFrame([{column_name: "" for column_name in df.columns}])
-        title_row.at[0, first_column] = f"### {subtitle}"
-
+        title_row = pd.DataFrame([{column_name: title_text for column_name in df.columns}])
         combined_parts.append(title_row)
         combined_parts.append(df)
 
     return pd.concat(combined_parts, ignore_index=True)
+
+
+def style_section_title_rows(df: pd.DataFrame, subtitles: list[str]):
+    """Aplica estilo visual a filas de subtítulo para destacarlas en toda la tabla."""
+    subtitle_set = {subtitle for subtitle in subtitles if subtitle}
+
+    def row_style(row: pd.Series) -> list[str]:
+        first_value = str(row.iloc[0]).strip() if len(row) > 0 else ""
+        if first_value in subtitle_set:
+            return [
+                "background-color: #f0f0f0; font-weight: 700; font-size: 1.05rem;"
+            ] * len(row)
+        return [""] * len(row)
+
+    return df.style.apply(row_style, axis=1)
 
 
 def find_column_name(columns: pd.Index, target_name: str) -> str | None:
@@ -752,30 +765,12 @@ if uploaded_files:
 
         st.subheader(f"3) Resultado transformado combinado ({PREVIEW_ROWS} piezas visibles)")
 
-        editable_column = find_column_name(final_df.columns, "Observaciones")
-        disabled_columns = [col for col in final_df.columns if col != editable_column]
-
-        if editable_column is not None:
-            final_df[editable_column] = final_df[editable_column].fillna("").astype("string")
-            final_df = st.data_editor(
-                final_df,
-                width="stretch",
-                height=PREVIEW_HEIGHT,
-                num_rows="fixed",
-                disabled=disabled_columns,
-                column_config={
-                    editable_column: st.column_config.TextColumn(
-                        "Observaciones",
-                        help="Puedes escribir texto libre con letras, números y símbolos.",
-                    )
-                },
-            )
-        else:
-            st.dataframe(
-                final_df,
-                width="stretch",
-                height=PREVIEW_HEIGHT,
-            )
+        styled_final_df = style_section_title_rows(final_df, section_subtitles)
+        st.dataframe(
+            styled_final_df,
+            width="stretch",
+            height=PREVIEW_HEIGHT,
+        )
 
         csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
