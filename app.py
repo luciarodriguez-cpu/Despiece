@@ -380,6 +380,52 @@ def render_observaciones_editor(df: pd.DataFrame, editor_key: str) -> pd.DataFra
     )
 
 
+def render_sectioned_observaciones_editor(
+    final_df: pd.DataFrame,
+    subtitles: list[str],
+    key_prefix: str,
+) -> pd.DataFrame:
+    """Renderiza editores por bloque con subtítulo en negrita ocupando una sola línea visual."""
+    if final_df.empty:
+        return final_df.copy()
+
+    order_column = find_column_name(final_df.columns, "Orden CSV")
+    if order_column is None:
+        return render_observaciones_editor(final_df, f"{key_prefix}_single")
+
+    order_series = final_df[order_column].fillna("").astype(str).str.strip()
+    edited_sections: list[pd.DataFrame] = []
+
+    for order_value in pd.unique(order_series):
+        if order_value == "":
+            continue
+
+        section_df = final_df[order_series == order_value].copy()
+
+        subtitle = f"Bloque {order_value}"
+        if order_value.isdigit():
+            subtitle_index = int(order_value) - 1
+            if 0 <= subtitle_index < len(subtitles):
+                subtitle = subtitles[subtitle_index]
+
+        st.markdown(
+            f"<div style='font-weight:800; background:#f2f2f2; border:1px solid rgba(49,51,63,0.2);"
+            f" border-bottom:none; border-radius:8px 8px 0 0; padding:0.5rem 0.75rem; margin-top:0.6rem;'>{html.escape(subtitle)}</div>",
+            unsafe_allow_html=True,
+        )
+
+        edited_section_df = render_observaciones_editor(
+            section_df,
+            f"{key_prefix}_{order_value}",
+        )
+        edited_sections.append(edited_section_df)
+
+    if not edited_sections:
+        return final_df.copy()
+
+    return pd.concat(edited_sections, axis=0).sort_index(kind="stable")
+
+
 def build_sectioned_editor_dataframe(final_df: pd.DataFrame, subtitles: list[str]) -> pd.DataFrame:
     """Construye una vista con filas de subtítulo para edición de Observaciones."""
     if final_df.empty:
@@ -1176,12 +1222,11 @@ if uploaded_files:
             unsafe_allow_html=True,
         )
         st.caption("La tabla incluye subtítulos por archivo con línea de sección y solo permite editar Observaciones.")
-        sectioned_editor_df = build_sectioned_editor_dataframe(final_df, source_subtitles)
-        edited_sectioned_editor_df = render_observaciones_editor(
-            sectioned_editor_df,
+        final_df = render_sectioned_observaciones_editor(
+            final_df,
+            source_subtitles,
             "resultado_observaciones_editor",
         )
-        final_df = sync_observaciones_from_sectioned_editor(final_df, edited_sectioned_editor_df)
 
         st.subheader("3) Revisión de Name")
         issues_df = detect_name_issues(final_df)
@@ -1236,12 +1281,11 @@ if uploaded_files:
 
                 if post_issues_df.empty:
                     st.success("Correcciones aplicadas. Names OK. Puedes descargar el CSV.")
-                    sectioned_editor_df = build_sectioned_editor_dataframe(final_df, source_subtitles)
-                    edited_sectioned_editor_df = render_observaciones_editor(
-                        sectioned_editor_df,
+                    final_df = render_sectioned_observaciones_editor(
+                        final_df,
+                        source_subtitles,
                         "resultado_observaciones_editor_post_fix",
                     )
-                    final_df = sync_observaciones_from_sectioned_editor(final_df, edited_sectioned_editor_df)
                     csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
                     st.download_button(
                         label="4) Descargar CSV transformado",
