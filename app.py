@@ -1,5 +1,6 @@
 import csv
 import html
+import math
 import re
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -536,6 +537,162 @@ def parse_dimension_to_float(value: object) -> float | None:
         return float(match.group(0))
     except ValueError:
         return None
+
+
+def fit_dimensions_to_standards(
+    final_df: pd.DataFrame,
+    df_dimensiones: pd.DataFrame,
+    tolerance: float = 1.75,
+) -> pd.DataFrame:
+    """Ajusta Ancho/Largo de piezas E/T/L/B a estándares definidos en df_dimensiones."""
+
+    def _parse_float(value: object) -> float | None:
+        if pd.isna(value):
+            return None
+
+        clean_text = str(value).strip().lower()
+        if clean_text == "":
+            return None
+
+        clean_text = clean_text.replace("mm", "").replace(",", ".")
+        match = re.search(r"-?\d+(?:\.\d+)?", clean_text)
+        if not match:
+            return None
+
+        try:
+            return float(match.group(0))
+        except ValueError:
+            return None
+
+    def _pick_by_distance(candidates: list[tuple[float, float]], width: float, length: float) -> tuple[float, float] | None:
+        if not candidates:
+            return None
+        return min(candidates, key=lambda item: abs(item[0] - width) + abs(item[1] - length))
+
+    def _pick_by_coverage(candidates: list[tuple[float, float]], width: float, length: float) -> tuple[float, float] | None:
+        if not candidates:
+            return None
+        return min(candidates, key=lambda item: (item[0] - width) + (item[1] - length))
+
+    def _format_int(value: float) -> str:
+        return str(int(round(value)))
+
+    tipologia_column = find_column_name(final_df.columns, "Tipologia") or find_column_name(final_df.columns, "Tipología")
+    width_column = next(
+        (col for col in ["Ancho", "LenY", "Width"] if find_column_name(final_df.columns, col) is not None),
+        None,
+    )
+    length_column = next(
+        (
+            col
+            for col in ["Largo", "Alto", "LenZ", "Height"]
+            if find_column_name(final_df.columns, col) is not None
+        ),
+        None,
+    )
+
+    if tipologia_column is None or width_column is None or length_column is None:
+        return final_df
+
+    resolved_width_column = find_column_name(final_df.columns, width_column)
+    resolved_length_column = find_column_name(final_df.columns, length_column)
+    if resolved_width_column is None or resolved_length_column is None:
+        return final_df
+
+    standards = df_dimensiones.copy()
+    if standards.empty:
+        return final_df
+
+    standards_tip = standards["Tipologia"].fillna("").astype(str).str.strip().str.upper().str[:1]
+    standards_width = standards["Ancho"].apply(_parse_float)
+    standards_length = standards["Largo"].apply(_parse_float)
+    valid_mask = standards_tip.isin(["E", "T", "L", "B"]) & standards_width.notna() & standards_length.notna()
+
+    grouped_standards: dict[str, list[tuple[float, float]]] = {}
+    for std_tip, std_width, std_length in zip(
+        standards_tip[valid_mask],
+        standards_width[valid_mask],
+        standards_length[valid_mask],
+    ):
+        grouped_standards.setdefault(std_tip, []).append((float(std_width), float(std_length)))
+
+    adjusted = final_df.copy()
+
+    for row_index, row in adjusted.iterrows():
+        raw_tip = "" if pd.isna(row.get(tipologia_column)) else str(row.get(tipologia_column)).strip().upper()
+        tip = raw_tip[:1]
+        if tip not in {"E", "T", "L", "B"}:
+            continue
+
+        width = _parse_float(row.get(resolved_width_column))
+        length = _parse_float(row.get(resolved_length_column))
+        if width is None or length is None:
+            continue
+
+        standards_for_tip = grouped_standards.get(tip, [])
+        if not standards_for_tip:
+            adjusted.at[row_index, resolved_width_column] = _format_int(math.ceil(width))
+            adjusted.at[row_index, resolved_length_column] = _format_int(math.ceil(length))
+            continue
+
+        block_rotation = False
+        gama_column = find_column_name(adjusted.columns, "Gama")
+        acabado_column = find_column_name(adjusted.columns, "Acabado")
+        if gama_column is not None:
+            gama_value = "" if pd.isna(row.get(gama_column)) else str(row.get(gama_column)).strip().upper()
+            if gama_value == "WOO":
+                block_rotation = True
+        if acabado_column is not None:
+            acabado_value = "" if pd.isna(row.get(acabado_column)) else str(row.get(acabado_column)).strip().upper()
+            if acabado_value == "METAL":
+                block_rotation = True
+
+        chosen_standard: tuple[float, float] | None = None
+
+        if tip == "T":
+            valid_candidates = [(sw, sl) for sw, sl in standards_for_tip if width < (sw - 15)]
+            near_candidates = [(sw, sl) for sw, sl in valid_candidates if abs(sl - length) <= tolerance]
+            chosen_standard = _pick_by_distance(near_candidates, width, length)
+
+            if chosen_standard is None:
+                cover_candidates = [(sw, sl) for sw, sl in valid_candidates if sl >= length]
+                if cover_candidates:
+                    chosen_standard = min(cover_candidates, key=lambda item: item[1] - length)
+        else:
+            near_candidates = [
+                (sw, sl)
+                for sw, sl in standards_for_tip
+                if abs(sw - width) <= tolerance and abs(sl - length) <= tolerance
+            ]
+            chosen_standard = _pick_by_distance(near_candidates, width, length)
+
+            if chosen_standard is None:
+                cover_candidates = [(sw, sl) for sw, sl in standards_for_tip if sw >= width and sl >= length]
+                chosen_standard = _pick_by_coverage(cover_candidates, width, length)
+
+            if chosen_standard is None and not block_rotation:
+                rotated_width, rotated_length = length, width
+                near_candidates_rotated = [
+                    (sw, sl)
+                    for sw, sl in standards_for_tip
+                    if abs(sw - rotated_width) <= tolerance and abs(sl - rotated_length) <= tolerance
+                ]
+                chosen_standard = _pick_by_distance(near_candidates_rotated, rotated_width, rotated_length)
+
+                if chosen_standard is None:
+                    cover_candidates_rotated = [
+                        (sw, sl) for sw, sl in standards_for_tip if sw >= rotated_width and sl >= rotated_length
+                    ]
+                    chosen_standard = _pick_by_coverage(cover_candidates_rotated, rotated_width, rotated_length)
+
+        if chosen_standard is None:
+            adjusted.at[row_index, resolved_width_column] = _format_int(math.ceil(width))
+            adjusted.at[row_index, resolved_length_column] = _format_int(math.ceil(length))
+        else:
+            adjusted.at[row_index, resolved_width_column] = _format_int(chosen_standard[0])
+            adjusted.at[row_index, resolved_length_column] = _format_int(chosen_standard[1])
+
+    return adjusted
 
 
 def validate_name_by_tipologia(
@@ -1244,6 +1401,7 @@ if uploaded_files:
             source_subtitles.append(get_project_subtitle_from_filename(uploaded_file.name))
 
         final_df = pd.concat(transformed_dfs, ignore_index=True)
+        final_df = fit_dimensions_to_standards(final_df, df_dimensiones, tolerance=1.75)
         final_df = reorder_result_columns(final_df)
 
         st.markdown(
