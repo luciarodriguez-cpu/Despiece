@@ -1171,8 +1171,11 @@ if uploaded_files:
             unsafe_allow_html=True,
         )
 
-        st.subheader("3) Resultado transformado combinado (Observaciones editables)")
-        st.caption("La tabla incluye subtítulos por archivo y solo permite editar Observaciones.")
+        st.markdown(
+            "<h3 style='font-weight:800; margin: 0;'>3) Resultado transformado combinado (Observaciones editables)</h3>",
+            unsafe_allow_html=True,
+        )
+        st.caption("La tabla incluye subtítulos por archivo con línea de sección y solo permite editar Observaciones.")
         sectioned_editor_df = build_sectioned_editor_dataframe(final_df, source_subtitles)
         edited_sectioned_editor_df = render_observaciones_editor(
             sectioned_editor_df,
