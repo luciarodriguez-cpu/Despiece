@@ -214,12 +214,13 @@ def add_source_metadata_columns(
     df: pd.DataFrame,
     source_index: int,
     order_column_name: str = "Orden CSV",
+    apply_name_prefix: bool = True,
 ) -> pd.DataFrame:
-    """Añade metadatos de origen: prefijo en Name y orden CSV al final."""
+    """Añade metadatos de origen: prefijo opcional en Name y orden CSV al final."""
     with_source = df.copy()
 
     name_column = find_column_name(with_source.columns, "Name")
-    if name_column is not None:
+    if apply_name_prefix and name_column is not None:
         name_values = with_source[name_column].fillna("").astype("string").str.strip()
         source_prefix = get_source_letter_prefix(source_index)
         with_source[name_column] = source_prefix + name_values
@@ -812,6 +813,7 @@ if uploaded_files:
         original_dfs: list[pd.DataFrame] = []
         transformed_dfs: list[pd.DataFrame] = []
         section_subtitles: list[str] = []
+        multiple_sources = len(uploaded_files) > 1
 
         for file_position, uploaded_file in enumerate(uploaded_files, start=1):
             # Leemos cada CSV de forma segura.
@@ -835,12 +837,20 @@ if uploaded_files:
             # Aplicamos plantilla de transformación por archivo y lo acumulamos.
             transformed_df = transform_dataframe(original_df, project_id, df_materiales, map_tiradores)
             transformed_df = transform_apertura(transformed_df, map_aperturas, col="Apertura")
-            transformed_df = add_source_metadata_columns(transformed_df, file_position)
+            transformed_df = add_source_metadata_columns(
+                transformed_df,
+                file_position,
+                apply_name_prefix=multiple_sources,
+            )
             transformed_dfs.append(transformed_df)
-            section_subtitles.append(get_project_subtitle_from_filename(uploaded_file.name))
+            if multiple_sources:
+                section_subtitles.append(get_project_subtitle_from_filename(uploaded_file.name))
 
         original_preview_df = pd.concat(original_dfs, ignore_index=True)
-        final_df = add_section_title_rows(transformed_dfs, section_subtitles)
+        if multiple_sources:
+            final_df = add_section_title_rows(transformed_dfs, section_subtitles)
+        else:
+            final_df = pd.concat(transformed_dfs, ignore_index=True)
 
         st.subheader(f"2) Vista previa original combinada ({PREVIEW_ROWS} piezas visibles)")
         st.dataframe(original_preview_df, width="stretch", height=PREVIEW_HEIGHT)
@@ -852,8 +862,11 @@ if uploaded_files:
 
         st.subheader(f"3) Resultado transformado combinado ({PREVIEW_ROWS} piezas visibles)")
 
-        sectioned_table_html = render_sectioned_result_table(transformed_dfs, section_subtitles)
-        st.markdown(sectioned_table_html, unsafe_allow_html=True)
+        if multiple_sources:
+            sectioned_table_html = render_sectioned_result_table(transformed_dfs, section_subtitles)
+            st.markdown(sectioned_table_html, unsafe_allow_html=True)
+        else:
+            st.dataframe(final_df, width="stretch", height=PREVIEW_HEIGHT)
 
         csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
