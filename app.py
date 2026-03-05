@@ -343,6 +343,191 @@ def parse_numeric_dimension(value: object) -> float | None:
         return None
 
 
+TIP_RULES = {
+    "B": re.compile(r"^B\d+$"),
+    "E": re.compile(r"^(?:E\d+|FE\d+|M\d+-(?:E|FE)\d+|P\d+-(?:E|FE)\d+)$"),
+    "L": re.compile(r"^(?:PL\d+|M\d+-PL\d+|P\d+-PL\d+|H\d+-PL\d+)$"),
+    "P": re.compile(r"^(?:P\d+|M\d+-P\d+)$"),
+    "C": re.compile(r"^(?:C\d+|M\d+-C\d+)$"),
+    "X": re.compile(r"^(?:P\d+|P\d+-P\d+|AP\d+-P\d+)$"),
+    "R": re.compile(r"^R\d+$"),
+    "TALL": re.compile(r"^(?:T\d+|M\d+-T\d+|P\d+-T\d+|H\d+-T\d+|AP\d+-T\d+)$"),
+    "CT": re.compile(r"^CT\d+$"),
+    "MCT": re.compile(r"^M\d+-CT\d+$"),
+    "PCT": re.compile(r"^P\d+-CT\d+$"),
+}
+
+
+def parse_dimension_to_float(value: object) -> float | None:
+    """Convierte dimensiones textuales a float eliminando mm, comas y espacios."""
+    if pd.isna(value):
+        return None
+
+    clean_text = str(value).strip().lower()
+    if clean_text == "":
+        return None
+
+    clean_text = clean_text.replace("mm", "")
+    clean_text = clean_text.replace(" ", "")
+    clean_text = clean_text.replace(",", ".")
+    match = re.search(r"-?\d+(?:\.\d+)?", clean_text)
+    if not match:
+        return None
+
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def validate_name_by_tipologia(
+    tipologia: object,
+    name: object,
+    ancho: float | None,
+    alto: float | None,
+) -> tuple[bool, str]:
+    """Valida Name según tipología y excepciones de dimensiones."""
+    tipologia_str = str(tipologia).strip().upper()
+    tipologia_key = tipologia_str[:1] if tipologia_str else ""
+
+    name_str = "" if pd.isna(name) else str(name).strip()
+    if name_str == "":
+        return False, "Name vacío"
+
+    core = re.sub(r"^[A-Za-z]-", "", name_str)
+
+    if tipologia_key == "B":
+        return (True, "") if TIP_RULES["B"].fullmatch(core) else (False, "Formato inválido para tipología B")
+    if tipologia_key == "E":
+        return (True, "") if TIP_RULES["E"].fullmatch(core) else (False, "Formato inválido para tipología E")
+    if tipologia_key == "L":
+        return (True, "") if TIP_RULES["L"].fullmatch(core) else (False, "Formato inválido para tipología L")
+    if tipologia_key == "P":
+        return (True, "") if TIP_RULES["P"].fullmatch(core) else (False, "Formato inválido para tipología P")
+    if tipologia_key == "C":
+        is_c_valid = TIP_RULES["C"].fullmatch(core) is not None
+        is_width_exception = ancho is not None and round(ancho) == 596 and TIP_RULES["P"].fullmatch(core) is not None
+        return (True, "") if is_c_valid or is_width_exception else (False, "Formato inválido para tipología C")
+    if tipologia_key == "X":
+        return (True, "") if TIP_RULES["X"].fullmatch(core) else (False, "Formato inválido para tipología X")
+    if tipologia_key == "R":
+        return (True, "") if TIP_RULES["R"].fullmatch(core) else (False, "Formato inválido para tipología R")
+    if tipologia_key == "T":
+        is_t_valid = TIP_RULES["TALL"].fullmatch(core) is not None
+        is_ct_valid = any(TIP_RULES[key].fullmatch(core) is not None for key in ["CT", "MCT", "PCT"])
+        rounded_pair = (
+            round(ancho) if ancho is not None else None,
+            round(alto) if alto is not None else None,
+        )
+        t_exception_pairs = {(598, 50), (598, 38), (50, 598), (38, 598)}
+        is_t_exception = rounded_pair in t_exception_pairs and TIP_RULES["C"].fullmatch(core) is not None
+        return (True, "") if is_t_valid or is_ct_valid or is_t_exception else (False, "Formato inválido para tipología T")
+
+    return False, "Tipología no reconocida"
+
+
+def detect_name_issues(final_df: pd.DataFrame) -> pd.DataFrame:
+    """Detecta Name vacío, formato inválido y duplicados en filas de piezas."""
+    name_column = find_column_name(final_df.columns, "Name")
+    tipologia_column = find_column_name(final_df.columns, "Tipologia")
+    ancho_column = next(
+        (find_column_name(final_df.columns, column) for column in ["Ancho", "LenY", "Width"] if find_column_name(final_df.columns, column) is not None),
+        None,
+    )
+    alto_column = next(
+        (find_column_name(final_df.columns, column) for column in ["Alto", "LenZ", "Height"] if find_column_name(final_df.columns, column) is not None),
+        None,
+    )
+
+    if name_column is None or tipologia_column is None:
+        return pd.DataFrame(columns=["fila", "Tipologia", "Name actual", "Motivo del error", "Nuevo Name"])
+
+    issues: list[dict[str, object]] = []
+    duplicate_candidates: list[tuple[int, str]] = []
+    issue_index: dict[int, int] = {}
+
+    for row_index, row in final_df.iterrows():
+        current_name = "" if pd.isna(row.get(name_column)) else str(row.get(name_column)).strip()
+        tipologia_value = "" if pd.isna(row.get(tipologia_column)) else str(row.get(tipologia_column)).strip()
+        ancho_value = parse_dimension_to_float(row.get(ancho_column)) if ancho_column is not None else None
+        alto_value = parse_dimension_to_float(row.get(alto_column)) if alto_column is not None else None
+
+        is_title_row = (
+            current_name == ""
+            and tipologia_value == ""
+            and (ancho_value is None)
+            and (alto_value is None)
+        )
+        if is_title_row:
+            continue
+
+        ok, reason = validate_name_by_tipologia(tipologia_value, current_name, ancho_value, alto_value)
+        if not ok:
+            issue_index[row_index] = len(issues)
+            issues.append(
+                {
+                    "fila": int(row_index),
+                    "Tipologia": tipologia_value,
+                    "Name actual": current_name,
+                    "Motivo del error": reason,
+                    "Nuevo Name": current_name,
+                }
+            )
+
+        normalized_name = current_name.strip().upper()
+        if normalized_name:
+            duplicate_candidates.append((row_index, normalized_name))
+
+    duplicates: dict[str, list[int]] = {}
+    for row_index, normalized_name in duplicate_candidates:
+        duplicates.setdefault(normalized_name, []).append(row_index)
+
+    for duplicated_name, rows in duplicates.items():
+        if len(rows) <= 1:
+            continue
+        for row_index in rows:
+            other_rows = [str(other) for other in rows if other != row_index]
+            duplicate_reason = f"Duplicado con fila(s): {', '.join(other_rows)} (Name: {duplicated_name})"
+            if row_index in issue_index:
+                issues[issue_index[row_index]]["Motivo del error"] = (
+                    f"{issues[issue_index[row_index]]['Motivo del error']} | {duplicate_reason}"
+                )
+            else:
+                source_row = final_df.loc[row_index]
+                issues.append(
+                    {
+                        "fila": int(row_index),
+                        "Tipologia": "" if pd.isna(source_row.get(tipologia_column)) else str(source_row.get(tipologia_column)).strip(),
+                        "Name actual": "" if pd.isna(source_row.get(name_column)) else str(source_row.get(name_column)).strip(),
+                        "Motivo del error": duplicate_reason,
+                        "Nuevo Name": "" if pd.isna(source_row.get(name_column)) else str(source_row.get(name_column)).strip(),
+                    }
+                )
+
+    if not issues:
+        return pd.DataFrame(columns=["fila", "Tipologia", "Name actual", "Motivo del error", "Nuevo Name"])
+
+    issues_df = pd.DataFrame(issues)
+    return issues_df.sort_values(by="fila", kind="stable").reset_index(drop=True)
+
+
+def apply_name_fixes(final_df: pd.DataFrame, name_fixes: dict[int, str]) -> pd.DataFrame:
+    """Aplica correcciones de Name por índice de fila."""
+    if not name_fixes:
+        return final_df
+
+    name_column = find_column_name(final_df.columns, "Name")
+    if name_column is None:
+        return final_df
+
+    updated_df = final_df.copy()
+    for row_index, new_name in name_fixes.items():
+        if row_index in updated_df.index:
+            updated_df.at[row_index, name_column] = "" if pd.isna(new_name) else str(new_name).strip()
+
+    return updated_df
+
+
 def normalize_dimension_text(series: pd.Series) -> pd.Series:
     """Limpia texto dimensional retirando sufijo mm y espacios."""
     return (
@@ -896,13 +1081,71 @@ if uploaded_files:
         else:
             st.dataframe(final_df, width="stretch", height=PREVIEW_HEIGHT)
 
-        csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
-        st.download_button(
-            label="3) Descargar CSV transformado",
-            data=BytesIO(csv_output),
-            file_name="resultado_transformado.csv",
-            mime="text/csv",
-        )
+        st.subheader("3) Revisión de Name")
+        issues_df = detect_name_issues(final_df)
+
+        if "name_fixes" not in st.session_state:
+            st.session_state["name_fixes"] = {}
+
+        if issues_df.empty:
+            st.success("Names OK. Puedes descargar el CSV.")
+            csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                label="4) Descargar CSV transformado",
+                data=BytesIO(csv_output),
+                file_name="resultado_transformado.csv",
+                mime="text/csv",
+            )
+        else:
+            st.error(
+                f"Hay {issues_df.shape[0]} piezas con Name incorrecto o duplicado. Corrige antes de descargar."
+            )
+
+            current_fixes = st.session_state.get("name_fixes", {})
+            issues_to_edit = issues_df.copy()
+            for edit_index, issue_row in issues_to_edit.iterrows():
+                row_index = int(issue_row["fila"])
+                if row_index in current_fixes:
+                    issues_to_edit.at[edit_index, "Nuevo Name"] = current_fixes[row_index]
+
+            edited_issues = st.data_editor(
+                issues_to_edit,
+                width="stretch",
+                hide_index=True,
+                num_rows="fixed",
+                disabled=["fila", "Tipologia", "Name actual", "Motivo del error"],
+                column_config={
+                    "Nuevo Name": st.column_config.TextColumn(
+                        "Nuevo Name",
+                        help="Edita solo este campo para proponer correcciones.",
+                    )
+                },
+                key="name_review_editor",
+            )
+
+            if st.button("Aplicar correcciones", type="primary"):
+                updated_fixes: dict[int, str] = {}
+                for _, row in edited_issues.iterrows():
+                    updated_fixes[int(row["fila"])] = "" if pd.isna(row["Nuevo Name"]) else str(row["Nuevo Name"]).strip()
+
+                st.session_state["name_fixes"] = updated_fixes
+                final_df = apply_name_fixes(final_df, updated_fixes)
+                post_issues_df = detect_name_issues(final_df)
+
+                if post_issues_df.empty:
+                    st.success("Correcciones aplicadas. Names OK. Puedes descargar el CSV.")
+                    csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
+                    st.download_button(
+                        label="4) Descargar CSV transformado",
+                        data=BytesIO(csv_output),
+                        file_name="resultado_transformado.csv",
+                        mime="text/csv",
+                    )
+                else:
+                    st.error(
+                        f"Tras aplicar correcciones, aún hay {post_issues_df.shape[0]} piezas con error."
+                    )
+                    st.dataframe(post_issues_df, width="stretch", hide_index=True)
 
     except ValueError as error_message:
         st.error(f"❌ {error_message}")
