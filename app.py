@@ -1295,6 +1295,10 @@ def transform_dataframe(
     if obs_column is not None and obs_column != "Observaciones":
         transformed = transformed.rename(columns={obs_column: "Observaciones"})
 
+    observaciones_column = find_column_name(transformed.columns, "Observaciones")
+    if observaciones_column is None:
+        transformed["Observaciones"] = ""
+
     removable_columns = [
         col_name
         for col_name in ["Tirador(0=sin tirador)", "Hidden"]
