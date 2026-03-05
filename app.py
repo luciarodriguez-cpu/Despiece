@@ -319,7 +319,7 @@ def render_sectioned_result_table(dataframes: list[pd.DataFrame], subtitles: lis
         white-space: nowrap;
       }}
       table.sectioned-table tr.section-row td {{
-        background: #ececec;
+        background: #f2f2f2;
         font-weight: 700;
         font-size: 1rem;
         text-align: left;
@@ -1172,7 +1172,13 @@ if uploaded_files:
         )
 
         st.subheader("3) Resultado transformado combinado")
-        st.caption("Puedes editar la columna Observaciones directamente en esta tabla.")
+        sectioned_table_html = render_sectioned_result_table(
+            [reorder_result_columns(df) for df in transformed_dfs],
+            source_subtitles,
+        )
+        st.markdown(sectioned_table_html, unsafe_allow_html=True)
+
+        st.caption("Puedes editar la columna Observaciones en la tabla inferior.")
         sectioned_editor_df = build_sectioned_editor_dataframe(final_df, source_subtitles)
         edited_sectioned_editor_df = render_observaciones_editor(
             sectioned_editor_df,
