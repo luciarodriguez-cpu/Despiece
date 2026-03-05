@@ -197,19 +197,37 @@ def get_project_subtitle_from_filename(filename: str) -> str:
     return subtitle or stem
 
 
-def add_source_file_order_column(
+def get_source_letter_prefix(source_index: int) -> str:
+    """Devuelve prefijo alfabético por índice de archivo: 1->A-, 2->B-, ..., 27->AA-."""
+    if source_index < 1:
+        return ""
+
+    letters: list[str] = []
+    value = source_index
+    while value > 0:
+        value, remainder = divmod(value - 1, 26)
+        letters.append(chr(ord("A") + remainder))
+    return f"{''.join(reversed(letters))}-"
+
+
+def add_source_metadata_columns(
     df: pd.DataFrame,
     source_index: int,
-    column_name: str = "Orden CSV",
+    order_column_name: str = "Orden CSV",
 ) -> pd.DataFrame:
-    """Añade una columna con el número de orden del CSV de origen (1, 2, 3, ...)."""
+    """Añade metadatos de origen: prefijo en Name y orden CSV al final."""
     with_source = df.copy()
 
-    if column_name in with_source.columns:
-        with_source = with_source.drop(columns=[column_name])
+    name_column = find_column_name(with_source.columns, "Name")
+    if name_column is not None:
+        name_values = with_source[name_column].fillna("").astype("string").str.strip()
+        source_prefix = get_source_letter_prefix(source_index)
+        with_source[name_column] = source_prefix + name_values
 
-    insert_position = 1 if "ID Proyecto" in with_source.columns else 0
-    with_source.insert(insert_position, column_name, str(source_index))
+    if order_column_name in with_source.columns:
+        with_source = with_source.drop(columns=[order_column_name])
+
+    with_source[order_column_name] = str(source_index)
     return with_source
 
 
@@ -817,7 +835,7 @@ if uploaded_files:
             # Aplicamos plantilla de transformación por archivo y lo acumulamos.
             transformed_df = transform_dataframe(original_df, project_id, df_materiales, map_tiradores)
             transformed_df = transform_apertura(transformed_df, map_aperturas, col="Apertura")
-            transformed_df = add_source_file_order_column(transformed_df, file_position)
+            transformed_df = add_source_metadata_columns(transformed_df, file_position)
             transformed_dfs.append(transformed_df)
             section_subtitles.append(get_project_subtitle_from_filename(uploaded_file.name))
 
