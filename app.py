@@ -302,9 +302,10 @@ def render_sectioned_result_table(dataframes: list[pd.DataFrame], subtitles: lis
         white-space: nowrap;
       }}
       table.sectioned-table tr.section-row td {{
-        background: #f0f0f0;
+        background: #ececec;
         font-weight: 700;
-        font-size: 1.02rem;
+        font-size: 1rem;
+        text-align: left;
       }}
     </style>
     <div class="sectioned-table-wrap">
@@ -1016,6 +1017,7 @@ if uploaded_files:
         seen_hashes: dict[str, str] = {}
 
         transformed_dfs: list[pd.DataFrame] = []
+        source_subtitles: list[str] = []
         for file_position, uploaded_file in enumerate(uploaded_files, start=1):
             file_name = uploaded_file.name.strip()
             file_bytes = uploaded_file.getvalue()
@@ -1058,6 +1060,7 @@ if uploaded_files:
                 apply_name_prefix=len(uploaded_files) > 1,
             )
             transformed_dfs.append(transformed_df)
+            source_subtitles.append(get_project_subtitle_from_filename(uploaded_file.name))
 
         final_df = pd.concat(transformed_dfs, ignore_index=True)
 
@@ -1067,27 +1070,8 @@ if uploaded_files:
         )
 
         st.subheader("3) Resultado transformado combinado")
-
-        editable_column = find_column_name(final_df.columns, "Observaciones")
-        disabled_columns = [col for col in final_df.columns if col != editable_column]
-
-        if editable_column is not None:
-            final_df[editable_column] = final_df[editable_column].fillna("").astype("string")
-            final_df = st.data_editor(
-                final_df,
-                width="stretch",
-                height=PREVIEW_HEIGHT,
-                num_rows="fixed",
-                disabled=disabled_columns,
-                column_config={
-                    editable_column: st.column_config.TextColumn(
-                        "Observaciones",
-                        help="Puedes escribir texto libre con letras, números y símbolos.",
-                    )
-                },
-            )
-        else:
-            st.dataframe(final_df, width="stretch", height=PREVIEW_HEIGHT)
+        sectioned_table_html = render_sectioned_result_table(transformed_dfs, source_subtitles)
+        st.markdown(sectioned_table_html, unsafe_allow_html=True)
 
         st.subheader("3) Revisión de Name")
         issues_df = detect_name_issues(final_df)
