@@ -632,6 +632,37 @@ def validate_project_id(project_id: str) -> None:
         )
 
 
+def get_project_id_validation_detail(filename: str) -> str:
+    """Devuelve una explicación breve del fallo de formato en el nombre del archivo."""
+    clean_name = (filename or "").strip()
+    stem = clean_name.rsplit(".", 1)[0]
+    first_part = re.split(r"[\s_]+", stem, maxsplit=1)[0]
+
+    if not first_part:
+        return "No se encontró ningún texto antes de la extensión del archivo."
+
+    if "-" not in first_part:
+        return f"'{first_part}' no contiene el guion obligatorio entre letras y números."
+
+    parts = first_part.split("-", 1)
+    if len(parts) != 2:
+        return f"'{first_part}' no respeta la estructura esperada LL-NNNNN."
+
+    letters_part, numbers_part = parts
+
+    if len(letters_part) != 2 or not letters_part.isalpha():
+        return (
+            f"'{letters_part}' no es válido: la parte inicial debe tener exactamente 2 letras."
+        )
+
+    if len(numbers_part) != 5 or not numbers_part.isdigit():
+        return (
+            f"'{numbers_part}' no es válido: la parte final debe tener exactamente 5 números."
+        )
+
+    return f"'{first_part}' no coincide con el patrón esperado LL-NNNNN."
+
+
 uploaded_file = st.file_uploader("1) Sube tu archivo CSV", type=["csv"])
 
 if uploaded_file is not None:
@@ -656,7 +687,11 @@ if uploaded_file is not None:
         )
 
         project_id = get_project_id_from_filename(uploaded_file.name)
-        validate_project_id(project_id)
+        try:
+            validate_project_id(project_id)
+        except ValueError as exc:
+            detail = get_project_id_validation_detail(uploaded_file.name)
+            raise ValueError(f"{exc} Detalle del nombre recibido: {detail}") from exc
 
         # Aplicamos plantilla de transformación.
         final_df = transform_dataframe(original_df, project_id, df_materiales, map_tiradores)
