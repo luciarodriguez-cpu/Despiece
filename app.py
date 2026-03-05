@@ -621,6 +621,24 @@ def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
     grouped_sources: dict[tuple[str, float, str, str, str], dict[str, str]] = {}
     valid_rr_indexes: list[int] = []
 
+    next_r_index_by_prefix: dict[str, int] = {}
+    if name_column is not None:
+        preserved_tip_mask = ~rr_mask
+        if preserved_tip_mask.any():
+            for _, preserved_row in final_df.loc[preserved_tip_mask].iterrows():
+                raw_name = preserved_row.get(name_column)
+                if pd.isna(raw_name):
+                    continue
+
+                name_text = str(raw_name).strip().upper()
+                match = re.match(r"^\s*([A-Za-z])\s*-\s*R(\d+)\s*$", name_text)
+                if not match:
+                    continue
+
+                prefix_name = match.group(1)
+                index_value = int(match.group(2))
+                next_r_index_by_prefix[prefix_name] = max(next_r_index_by_prefix.get(prefix_name, 0), index_value)
+
     for row_index in final_df.index[rr_mask]:
         row = final_df.loc[row_index]
         ancho_value = parse_dimension_to_float(row.get(ancho_column))
@@ -657,11 +675,13 @@ def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
     new_rows: list[dict[str, object]] = []
     for (prefix, ancho, core, gama, acabado), total_length in grouped_lengths.items():
         n_barras = int(math.ceil(total_length / 2300))
-        for bar_index in range(1, n_barras + 1):
+        for _ in range(1, n_barras + 1):
             new_row = {column_name: "" for column_name in final_df.columns}
             new_row[tipologia_column] = "R"
             if name_column is not None:
-                new_row[name_column] = f"{prefix}-R{bar_index}"
+                next_index = next_r_index_by_prefix.get(prefix, 0) + 1
+                next_r_index_by_prefix[prefix] = next_index
+                new_row[name_column] = f"{prefix}-R{next_index}"
             new_row[ancho_column] = str(int(round(ancho)))
             new_row[tramo_column] = "2400"
             if core_column is not None:
