@@ -183,6 +183,139 @@ def get_project_id_from_filename(filename: str) -> str:
     return f"{letters.upper()}-{numbers}"
 
 
+def get_project_subtitle_from_filename(filename: str) -> str:
+    """Extrae el texto posterior al prefijo LL-NNNNN para usarlo como subtítulo."""
+    clean_name = (filename or "").strip()
+    stem = clean_name.rsplit(".", 1)[0].strip()
+
+    match = re.match(r"^[A-Za-z]{2}-\d{5}(.*)$", stem)
+    if not match:
+        return stem
+
+    subtitle = match.group(1).strip()
+    subtitle = subtitle.lstrip("-_ ").strip()
+    return subtitle or stem
+
+
+def get_source_letter_prefix(source_index: int) -> str:
+    """Devuelve prefijo alfabético por índice de archivo: 1->A-, 2->B-, ..., 27->AA-."""
+    if source_index < 1:
+        return ""
+
+    letters: list[str] = []
+    value = source_index
+    while value > 0:
+        value, remainder = divmod(value - 1, 26)
+        letters.append(chr(ord("A") + remainder))
+    return f"{''.join(reversed(letters))}-"
+
+
+def add_source_metadata_columns(
+    df: pd.DataFrame,
+    source_index: int,
+    order_column_name: str = "Orden CSV",
+    apply_name_prefix: bool = True,
+) -> pd.DataFrame:
+    """Añade metadatos de origen: prefijo opcional en Name y orden CSV al final."""
+    with_source = df.copy()
+
+    name_column = find_column_name(with_source.columns, "Name")
+    if apply_name_prefix and name_column is not None:
+        name_values = with_source[name_column].fillna("").astype("string").str.strip()
+        source_prefix = get_source_letter_prefix(source_index)
+        with_source[name_column] = source_prefix + name_values
+
+    if order_column_name in with_source.columns:
+        with_source = with_source.drop(columns=[order_column_name])
+
+    with_source[order_column_name] = str(source_index)
+    return with_source
+
+
+def add_section_title_rows(dataframes: list[pd.DataFrame], subtitles: list[str]) -> pd.DataFrame:
+    """Inserta una fila de título por cada CSV de origen en el resultado combinado."""
+    if not dataframes:
+        return pd.DataFrame()
+
+    combined_parts: list[pd.DataFrame] = []
+    first_column = str(dataframes[0].columns[0])
+
+    for index, df in enumerate(dataframes):
+        subtitle = subtitles[index] if index < len(subtitles) else f"Bloque {index + 1}"
+
+        title_row = pd.DataFrame([{column_name: "" for column_name in df.columns}])
+        title_row.at[0, first_column] = subtitle
+        combined_parts.append(title_row)
+        combined_parts.append(df)
+
+    return pd.concat(combined_parts, ignore_index=True)
+
+
+def render_sectioned_result_table(dataframes: list[pd.DataFrame], subtitles: list[str]) -> str:
+    """Renderiza la tabla combinada con fila de subtítulo usando merge visual (colspan)."""
+    if not dataframes:
+        return ""
+
+    columns = [str(col) for col in dataframes[0].columns]
+    header_html = "".join(f"<th>{html.escape(col)}</th>" for col in columns)
+
+    body_rows: list[str] = []
+    for index, df in enumerate(dataframes):
+        subtitle = subtitles[index] if index < len(subtitles) else f"Bloque {index + 1}"
+        body_rows.append(
+            f"<tr class='section-row'><td colspan='{len(columns)}'>{html.escape(subtitle)}</td></tr>"
+        )
+
+        for _, row in df.iterrows():
+            cells: list[str] = []
+            for column_name in df.columns:
+                value = row[column_name]
+                text = "" if pd.isna(value) else str(value)
+                cells.append(f"<td>{html.escape(text)}</td>")
+            body_rows.append(f"<tr>{''.join(cells)}</tr>")
+
+    table_html = f"""
+    <style>
+      .sectioned-table-wrap {{
+        max-height: {PREVIEW_HEIGHT}px;
+        overflow: auto;
+        border: 1px solid rgba(49, 51, 63, 0.2);
+        border-radius: 0.5rem;
+      }}
+      table.sectioned-table {{
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }}
+      table.sectioned-table thead th {{
+        position: sticky;
+        top: 0;
+        background: white;
+        z-index: 1;
+      }}
+      table.sectioned-table th,
+      table.sectioned-table td {{
+        border: 1px solid rgba(49, 51, 63, 0.12);
+        padding: 0.35rem 0.5rem;
+        text-align: left;
+        white-space: nowrap;
+      }}
+      table.sectioned-table tr.section-row td {{
+        background: #f0f0f0;
+        font-weight: 700;
+        font-size: 1.02rem;
+      }}
+    </style>
+    <div class="sectioned-table-wrap">
+      <table class="sectioned-table">
+        <thead><tr>{header_html}</tr></thead>
+        <tbody>{''.join(body_rows)}</tbody>
+      </table>
+    </div>
+    """
+    return table_html
+
+
 def find_column_name(columns: pd.Index, target_name: str) -> str | None:
     """Busca una columna ignorando mayúsculas/minúsculas y espacios extremos."""
     normalized_target = target_name.strip().lower()
@@ -423,6 +556,20 @@ def transform_tiradores(df_user: pd.DataFrame, map_tiradores: dict) -> pd.DataFr
     return transformed
 
 
+def clear_posicion_tirador_when_tirador_empty(transformed: pd.DataFrame) -> pd.DataFrame:
+    """Vacía PosicionTirador cuando Tirador no tiene valor."""
+    tirador_column = find_column_name(transformed.columns, "Tirador")
+    posicion_column = find_column_name(transformed.columns, "PosicionTirador")
+
+    if tirador_column is None or posicion_column is None:
+        return transformed
+
+    result = transformed.copy()
+    tirador_empty = result[tirador_column].fillna("").astype(str).str.strip() == ""
+    result.loc[tirador_empty, posicion_column] = ""
+    return result
+
+
 def add_trasera_tirador(transformed: pd.DataFrame, source_df: pd.DataFrame) -> pd.DataFrame:
     """Añade/actualiza la columna final 'Trasera Tirador' con reglas de negocio."""
     if not transformed.index.equals(source_df.index):
@@ -572,6 +719,7 @@ def transform_dataframe(
 
     # 5) Transformar Tirador/Tirador(0=sin tirador) con equivalencias y salida final en "Tirador".
     transformed = transform_tiradores(transformed, map_tiradores)
+    transformed = clear_posicion_tirador_when_tirador_empty(transformed)
     transformed = add_trasera_tirador(transformed, source_for_trasera)
     forbidden_columns = [
         col_name
@@ -746,11 +894,7 @@ if uploaded_files:
                 },
             )
         else:
-            st.dataframe(
-                final_df,
-                width="stretch",
-                height=PREVIEW_HEIGHT,
-            )
+            st.dataframe(final_df, width="stretch", height=PREVIEW_HEIGHT)
 
         csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
