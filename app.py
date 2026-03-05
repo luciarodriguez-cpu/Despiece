@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import html
 import re
 from io import BytesIO, StringIO
@@ -1010,12 +1011,30 @@ if uploaded_files:
 
         _ = (df_dimensiones, map_aperturas, map_tiradores)
 
+        original_dfs: list[pd.DataFrame] = []
         seen_names: set[str] = set()
-        seen_hashes: dict[str, str] = {}
+        seen_hashes: set[str] = set()
+
         transformed_dfs: list[pd.DataFrame] = []
         section_subtitles: list[str] = []
         for file_position, uploaded_file in enumerate(uploaded_files, start=1):
-            # Leemos cada CSV de forma segura.
+            file_name = uploaded_file.name.strip()
+            file_bytes = uploaded_file.getvalue()
+            file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+            normalized_name = file_name.lower()
+            if normalized_name in seen_names:
+                raise ValueError(f"Has subido dos archivos con el mismo nombre: '{file_name}'.")
+            seen_names.add(normalized_name)
+
+            if file_hash in seen_hashes:
+                raise ValueError(
+                    f"El archivo '{file_name}' está duplicado por contenido. "
+                    "Revisa que no estés subiendo el mismo CSV dos veces."
+                )
+            seen_hashes.add(file_hash)
+
+            # Leemos cada CSV de forma segura (una única lectura).
             original_df, delimiter_used, encoding_used = load_csv(uploaded_file)
             original_dfs.append(original_df)
 
