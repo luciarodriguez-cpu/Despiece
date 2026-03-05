@@ -1,5 +1,5 @@
 import csv
-import hashlib
+import html
 import re
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -1013,11 +1013,11 @@ if uploaded_files:
         seen_names: set[str] = set()
         seen_hashes: dict[str, str] = {}
         transformed_dfs: list[pd.DataFrame] = []
-
-        for uploaded_file in uploaded_files:
-            file_name = uploaded_file.name.strip()
-            file_bytes = uploaded_file.getvalue()
-            file_hash = hashlib.sha256(file_bytes).hexdigest()
+        section_subtitles: list[str] = []
+        for file_position, uploaded_file in enumerate(uploaded_files, start=1):
+            # Leemos cada CSV de forma segura.
+            original_df, delimiter_used, encoding_used = load_csv(uploaded_file)
+            original_dfs.append(original_df)
 
             if file_name in seen_names:
                 raise ValueError(
@@ -1049,7 +1049,13 @@ if uploaded_files:
             # Aplicamos plantilla de transformación por archivo y lo acumulamos.
             transformed_df = transform_dataframe(original_df, project_id, df_materiales, map_tiradores)
             transformed_df = transform_apertura(transformed_df, map_aperturas, col="Apertura")
+            transformed_df = add_source_metadata_columns(
+                transformed_df,
+                file_position,
+                apply_name_prefix=len(uploaded_files) > 1,
+            )
             transformed_dfs.append(transformed_df)
+            section_subtitles.append(get_project_subtitle_from_filename(uploaded_file.name))
 
         final_df = pd.concat(transformed_dfs, ignore_index=True)
 
@@ -1058,7 +1064,9 @@ if uploaded_files:
             unsafe_allow_html=True,
         )
 
-        st.subheader(f"2) Resultado transformado combinado ({PREVIEW_ROWS} piezas visibles)")
+        st.subheader(f"3) Resultado transformado combinado ({PREVIEW_ROWS} piezas visibles)")
+        sectioned_table_html = render_sectioned_result_table(transformed_dfs, section_subtitles)
+        st.markdown(sectioned_table_html, unsafe_allow_html=True)
 
         editable_column = find_column_name(final_df.columns, "Observaciones")
         disabled_columns = [col for col in final_df.columns if col != editable_column]
