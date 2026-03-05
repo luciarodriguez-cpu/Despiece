@@ -663,46 +663,58 @@ def get_project_id_validation_detail(filename: str) -> str:
     return f"'{first_part}' no coincide con el patrón esperado LL-NNNNN."
 
 
-uploaded_file = st.file_uploader("1) Sube tu archivo CSV", type=["csv"])
+uploaded_files = st.file_uploader(
+    "1) Sube uno o varios archivos CSV",
+    type=["csv"],
+    accept_multiple_files=True,
+)
 
-if uploaded_file is not None:
+if uploaded_files:
     try:
         # Carga interna de base de datos (sin mostrarla en la UI).
         df_dimensiones, df_materiales, map_aperturas, map_tiradores = get_database()
 
         _ = (df_dimensiones, map_aperturas, map_tiradores)
 
-        # Leemos el CSV de forma segura.
-        original_df, delimiter_used, encoding_used = load_csv(uploaded_file)
+        original_dfs: list[pd.DataFrame] = []
+        transformed_dfs: list[pd.DataFrame] = []
 
-        st.success(
-            f"Archivo leído correctamente (encoding: {encoding_used}, separador detectado: '{delimiter_used}')."
-        )
+        for uploaded_file in uploaded_files:
+            # Leemos cada CSV de forma segura.
+            original_df, delimiter_used, encoding_used = load_csv(uploaded_file)
+            original_dfs.append(original_df)
 
-        st.subheader(f"2) Vista previa original ({PREVIEW_ROWS} piezas visibles)")
-        st.dataframe(
-            original_df,
-            width="stretch",
-            height=PREVIEW_HEIGHT,
-        )
+            st.success(
+                f"{uploaded_file.name}: leído correctamente "
+                f"(encoding: {encoding_used}, separador detectado: '{delimiter_used}')."
+            )
 
-        project_id = get_project_id_from_filename(uploaded_file.name)
-        try:
-            validate_project_id(project_id)
-        except ValueError as exc:
-            detail = get_project_id_validation_detail(uploaded_file.name)
-            raise ValueError(f"{exc} Detalle del nombre recibido: {detail}") from exc
+            project_id = get_project_id_from_filename(uploaded_file.name)
+            try:
+                validate_project_id(project_id)
+            except ValueError as exc:
+                detail = get_project_id_validation_detail(uploaded_file.name)
+                raise ValueError(
+                    f"Error en '{uploaded_file.name}': {exc} Detalle del nombre recibido: {detail}"
+                ) from exc
 
-        # Aplicamos plantilla de transformación.
-        final_df = transform_dataframe(original_df, project_id, df_materiales, map_tiradores)
-        final_df = transform_apertura(final_df, map_aperturas, col="Apertura")
+            # Aplicamos plantilla de transformación por archivo y lo acumulamos.
+            transformed_df = transform_dataframe(original_df, project_id, df_materiales, map_tiradores)
+            transformed_df = transform_apertura(transformed_df, map_aperturas, col="Apertura")
+            transformed_dfs.append(transformed_df)
+
+        original_preview_df = pd.concat(original_dfs, ignore_index=True)
+        final_df = pd.concat(transformed_dfs, ignore_index=True)
+
+        st.subheader(f"2) Vista previa original combinada ({PREVIEW_ROWS} piezas visibles)")
+        st.dataframe(original_preview_df, width="stretch", height=PREVIEW_HEIGHT)
 
         st.markdown(
             f"<p style='font-size:2.25rem;font-weight:600;margin:0;'>{final_df.shape[0]} piezas</p>",
             unsafe_allow_html=True,
         )
 
-        st.subheader(f"3) Resultado transformado ({PREVIEW_ROWS} piezas visibles)")
+        st.subheader(f"3) Resultado transformado combinado ({PREVIEW_ROWS} piezas visibles)")
 
         editable_column = find_column_name(final_df.columns, "Observaciones")
         disabled_columns = [col for col in final_df.columns if col != editable_column]
@@ -746,4 +758,4 @@ if uploaded_file is not None:
         )
         st.exception(unexpected_error)
 else:
-    st.info("Empieza subiendo un archivo CSV para ver la vista previa y aplicar la transformación.")
+    st.info("Empieza subiendo uno o varios archivos CSV para ver la vista previa y aplicar la transformación.")
