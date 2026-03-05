@@ -551,6 +551,18 @@ def get_prefix_from_name(name: object) -> str:
     return "A"
 
 
+def _prefix_to_source_index(prefix: str) -> int | None:
+    """Convierte prefijo alfabético (A, B, ..., AA) a índice 1-based."""
+    clean_prefix = (prefix or "").strip().upper()
+    if clean_prefix == "" or not clean_prefix.isalpha():
+        return None
+
+    value = 0
+    for character in clean_prefix:
+        value = value * 26 + (ord(character) - ord("A") + 1)
+    return value
+
+
 def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
     """Recalcula barras de tipología R/RV agrupando tramos por barra equivalente."""
     if final_df.empty:
@@ -606,6 +618,7 @@ def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
         return final_df.copy()
 
     grouped_lengths: dict[tuple[str, float, str, str, str], float] = {}
+    grouped_sources: dict[tuple[str, float, str, str, str], dict[str, str]] = {}
     valid_rr_indexes: list[int] = []
 
     for row_index in final_df.index[rr_mask]:
@@ -623,6 +636,17 @@ def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
             _normalize_text(row.get(acabado_column)) if acabado_column is not None else "",
         )
         grouped_lengths[group_key] = grouped_lengths.get(group_key, 0.0) + float(tramo_value)
+
+        if group_key not in grouped_sources:
+            source_meta: dict[str, str] = {}
+            if orden_column is not None:
+                raw_order = row.get(orden_column)
+                source_meta["orden"] = "" if pd.isna(raw_order) else str(raw_order).strip()
+            if q_column is not None:
+                raw_q = row.get(q_column)
+                source_meta["q"] = "" if pd.isna(raw_q) else str(raw_q).strip()
+            grouped_sources[group_key] = source_meta
+
         valid_rr_indexes.append(row_index)
 
     if not valid_rr_indexes:
@@ -646,6 +670,18 @@ def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
                 new_row[gama_column] = gama
             if acabado_column is not None:
                 new_row[acabado_column] = acabado
+
+            source_meta = grouped_sources.get((prefix, ancho, core, gama, acabado), {})
+            if orden_column is not None:
+                order_value = source_meta.get("orden", "")
+                if order_value == "":
+                    source_index = _prefix_to_source_index(prefix)
+                    order_value = "" if source_index is None else str(source_index)
+                new_row[orden_column] = order_value
+
+            if q_column is not None and source_meta.get("q", "") != "":
+                new_row[q_column] = source_meta["q"]
+
             new_rows.append(new_row)
 
     if not new_rows:
