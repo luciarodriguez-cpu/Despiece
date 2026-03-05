@@ -577,6 +577,8 @@ def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
     acabado_column = find_column_name(final_df.columns, "Acabado")
     orden_column = find_column_name(final_df.columns, "Orden CSV")
     q_column = find_column_name(final_df.columns, "Q")
+    id_proyecto_column = find_column_name(final_df.columns, "ID Proyecto")
+    sku_column = find_column_name(final_df.columns, "SKU")
 
     if tipologia_column is None or ancho_column is None or tramo_column is None:
         return final_df.copy()
@@ -621,6 +623,14 @@ def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
     grouped_sources: dict[tuple[str, float, str, str, str], dict[str, str]] = {}
     valid_rr_indexes: list[int] = []
 
+    should_use_prefix = False
+    if orden_column is not None:
+        order_values = final_df[orden_column].fillna("").astype(str).str.strip()
+        should_use_prefix = order_values[order_values != ""].nunique() > 1
+    elif name_column is not None:
+        name_values = final_df[name_column].fillna("").astype(str)
+        should_use_prefix = name_values.str.match(r"^\s*[A-Za-z]-").any()
+
     next_r_index_by_prefix: dict[str, int] = {}
     if name_column is not None:
         preserved_tip_mask = ~rr_mask
@@ -631,12 +641,19 @@ def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
                     continue
 
                 name_text = str(raw_name).strip().upper()
-                match = re.match(r"^\s*([A-Za-z])\s*-\s*R(\d+)\s*$", name_text)
-                if not match:
-                    continue
+                if should_use_prefix:
+                    match = re.match(r"^\s*([A-Za-z])\s*-\s*R(\d+)\s*$", name_text)
+                    if not match:
+                        continue
+                    prefix_name = match.group(1)
+                    index_value = int(match.group(2))
+                else:
+                    match = re.match(r"^\s*R(\d+)\s*$", name_text)
+                    if not match:
+                        continue
+                    prefix_name = ""
+                    index_value = int(match.group(1))
 
-                prefix_name = match.group(1)
-                index_value = int(match.group(2))
                 next_r_index_by_prefix[prefix_name] = max(next_r_index_by_prefix.get(prefix_name, 0), index_value)
 
     for row_index in final_df.index[rr_mask]:
@@ -663,6 +680,9 @@ def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
             if q_column is not None:
                 raw_q = row.get(q_column)
                 source_meta["q"] = "" if pd.isna(raw_q) else str(raw_q).strip()
+            if id_proyecto_column is not None:
+                raw_project_id = row.get(id_proyecto_column)
+                source_meta["id_proyecto"] = "" if pd.isna(raw_project_id) else str(raw_project_id).strip()
             grouped_sources[group_key] = source_meta
 
         valid_rr_indexes.append(row_index)
@@ -679,9 +699,12 @@ def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
             new_row = {column_name: "" for column_name in final_df.columns}
             new_row[tipologia_column] = "R"
             if name_column is not None:
-                next_index = next_r_index_by_prefix.get(prefix, 0) + 1
-                next_r_index_by_prefix[prefix] = next_index
-                new_row[name_column] = f"{prefix}-R{next_index}"
+                counter_key = prefix if should_use_prefix else ""
+                next_index = next_r_index_by_prefix.get(counter_key, 0) + 1
+                next_r_index_by_prefix[counter_key] = next_index
+                new_row[name_column] = f"{prefix}-R{next_index}" if should_use_prefix else f"R{next_index}"
+            if sku_column is not None:
+                new_row[sku_column] = "R"
             new_row[ancho_column] = str(int(round(ancho)))
             new_row[tramo_column] = "2400"
             if core_column is not None:
@@ -701,6 +724,8 @@ def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
 
             if q_column is not None and source_meta.get("q", "") != "":
                 new_row[q_column] = source_meta["q"]
+            if id_proyecto_column is not None and source_meta.get("id_proyecto", "") != "":
+                new_row[id_proyecto_column] = source_meta["id_proyecto"]
 
             new_rows.append(new_row)
 
