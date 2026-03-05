@@ -380,6 +380,63 @@ def render_observaciones_editor(df: pd.DataFrame, editor_key: str) -> pd.DataFra
     )
 
 
+def build_sectioned_editor_dataframe(final_df: pd.DataFrame, subtitles: list[str]) -> pd.DataFrame:
+    """Construye una vista con filas de subtítulo para edición de Observaciones."""
+    if final_df.empty:
+        return final_df.copy()
+
+    order_column = find_column_name(final_df.columns, "Orden CSV")
+    if order_column is None:
+        return final_df.copy()
+
+    sectioned_parts: list[pd.DataFrame] = []
+    order_series = final_df[order_column].fillna("").astype(str).str.strip()
+
+    for order_value in pd.unique(order_series):
+        if order_value == "":
+            continue
+
+        section_df = final_df[order_series == order_value].copy()
+        title_row = pd.DataFrame([{column_name: "" for column_name in final_df.columns}])
+
+        subtitle = f"Bloque {order_value}"
+        if order_value.isdigit():
+            subtitle_index = int(order_value) - 1
+            if 0 <= subtitle_index < len(subtitles):
+                subtitle = subtitles[subtitle_index]
+
+        first_column = str(final_df.columns[0])
+        title_row.at[0, first_column] = subtitle
+
+        sectioned_parts.append(title_row)
+        sectioned_parts.append(section_df)
+
+    if not sectioned_parts:
+        return final_df.copy()
+
+    return pd.concat(sectioned_parts, ignore_index=True)
+
+
+def sync_observaciones_from_sectioned_editor(final_df: pd.DataFrame, edited_sectioned_df: pd.DataFrame) -> pd.DataFrame:
+    """Sincroniza Observaciones editadas en vista con subtítulos hacia el DataFrame real."""
+    if "Observaciones" not in final_df.columns or "Observaciones" not in edited_sectioned_df.columns:
+        return final_df
+
+    order_column = find_column_name(edited_sectioned_df.columns, "Orden CSV")
+    if order_column is None:
+        return final_df
+
+    real_row_mask = edited_sectioned_df[order_column].fillna("").astype(str).str.strip() != ""
+    edited_observaciones = edited_sectioned_df.loc[real_row_mask, "Observaciones"].reset_index(drop=True)
+
+    if edited_observaciones.shape[0] != final_df.shape[0]:
+        return final_df
+
+    synced_df = final_df.copy()
+    synced_df["Observaciones"] = edited_observaciones.values
+    return synced_df
+
+
 def parse_numeric_dimension(value: object) -> float | None:
     """Convierte una medida textual a número para evaluaciones condicionales."""
     if pd.isna(value):
@@ -1115,10 +1172,13 @@ if uploaded_files:
         )
 
         st.subheader("3) Resultado transformado combinado")
-        sectioned_table_html = render_sectioned_result_table(transformed_dfs, source_subtitles)
-        st.markdown(sectioned_table_html, unsafe_allow_html=True)
-        st.caption("Puedes editar la columna Observaciones en la tabla de abajo antes de descargar.")
-        final_df = render_observaciones_editor(final_df, "resultado_observaciones_editor")
+        st.caption("Puedes editar la columna Observaciones directamente en esta tabla.")
+        sectioned_editor_df = build_sectioned_editor_dataframe(final_df, source_subtitles)
+        edited_sectioned_editor_df = render_observaciones_editor(
+            sectioned_editor_df,
+            "resultado_observaciones_editor",
+        )
+        final_df = sync_observaciones_from_sectioned_editor(final_df, edited_sectioned_editor_df)
 
         st.subheader("3) Revisión de Name")
         issues_df = detect_name_issues(final_df)
@@ -1173,7 +1233,12 @@ if uploaded_files:
 
                 if post_issues_df.empty:
                     st.success("Correcciones aplicadas. Names OK. Puedes descargar el CSV.")
-                    final_df = render_observaciones_editor(final_df, "resultado_observaciones_editor_post_fix")
+                    sectioned_editor_df = build_sectioned_editor_dataframe(final_df, source_subtitles)
+                    edited_sectioned_editor_df = render_observaciones_editor(
+                        sectioned_editor_df,
+                        "resultado_observaciones_editor_post_fix",
+                    )
+                    final_df = sync_observaciones_from_sectioned_editor(final_df, edited_sectioned_editor_df)
                     csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
                     st.download_button(
                         label="4) Descargar CSV transformado",
