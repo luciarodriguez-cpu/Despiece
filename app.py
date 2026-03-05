@@ -1040,6 +1040,63 @@ def apply_name_fixes(final_df: pd.DataFrame, name_fixes: dict[int, str]) -> pd.D
     return updated_df
 
 
+def detect_skirting_shortage_by_source(final_df: pd.DataFrame) -> list[str]:
+    """Detecta por CSV si LenZ de tipología R es menor que LenY único de M<n> en tipología P."""
+    if final_df.empty:
+        return []
+
+    order_column = find_column_name(final_df.columns, "Orden CSV")
+    tipologia_column = find_column_name(final_df.columns, "Tipologia") or find_column_name(final_df.columns, "Tipología")
+    name_column = find_column_name(final_df.columns, "Name")
+    leny_column = find_column_name(final_df.columns, "LenY")
+    lenz_column = find_column_name(final_df.columns, "LenZ")
+
+    required_columns = [order_column, tipologia_column, name_column, leny_column, lenz_column]
+    if any(column_name is None for column_name in required_columns):
+        return []
+
+    alerts: list[str] = []
+    order_series = final_df[order_column].fillna("").astype(str).str.strip()
+
+    for order_value in pd.unique(order_series):
+        if order_value == "":
+            continue
+
+        source_df = final_df[order_series == order_value].copy()
+        tip_series = source_df[tipologia_column].fillna("").astype(str).str.strip().str.upper()
+
+        p_df = source_df[tip_series.str.startswith("P")]
+        unique_m_leny: dict[str, float] = {}
+
+        for _, row in p_df.iterrows():
+            name_text = "" if pd.isna(row.get(name_column)) else str(row.get(name_column)).upper()
+            matches = re.findall(r"\bM(\d+)\b", name_text)
+            if not matches:
+                continue
+
+            leny_value = parse_dimension_to_float(row.get(leny_column))
+            if leny_value is None:
+                continue
+
+            for m_number in matches:
+                key = f"M{m_number}"
+                if key not in unique_m_leny:
+                    unique_m_leny[key] = leny_value
+
+        leny_sum = sum(unique_m_leny.values())
+
+        r_df = source_df[tip_series.str.startswith("R")]
+        lenz_sum = r_df[lenz_column].apply(parse_dimension_to_float).dropna().sum()
+
+        if lenz_sum < leny_sum:
+            alerts.append(
+                "Cuidado: Es posible que haya menos rodapiés de los necesarios en el despiece"
+                f" (CSV {order_value}: LenZ R={lenz_sum:.2f}, LenY M únicos={leny_sum:.2f})."
+            )
+
+    return alerts
+
+
 def normalize_dimension_text(series: pd.Series) -> pd.Series:
     """Limpia texto dimensional retirando sufijo mm y espacios."""
     return (
@@ -1605,6 +1662,10 @@ if uploaded_files:
         final_df = fit_dimensions_to_standards(final_df, df_dimensiones, tolerance=1.75)
         final_df = recalculate_r_bars(final_df)
         final_df = reorder_result_columns(final_df)
+
+        skirting_alerts = detect_skirting_shortage_by_source(final_df)
+        for alert_message in skirting_alerts:
+            st.warning(alert_message)
 
         st.markdown(
             f"<p style='font-size:2.25rem;font-weight:600;margin:0;'>{final_df.shape[0]} piezas</p>",
