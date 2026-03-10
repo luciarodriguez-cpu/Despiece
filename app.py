@@ -1613,7 +1613,12 @@ uploaded_files = st.file_uploader(
     label_visibility="collapsed",
 )
 
-if uploaded_files:
+if not uploaded_files:
+    st.session_state.pop("uploaded_signature", None)
+    st.session_state.pop("name_fixes", None)
+    st.session_state.pop("name_review_editor", None)
+    st.info("Empieza subiendo uno o varios archivos CSV para ver la vista previa y aplicar la transformación.")
+else:
     file_signature = tuple(
         sorted(
             (
@@ -1624,11 +1629,11 @@ if uploaded_files:
         )
     )
 
-    if st.session_state.get("uploaded_signature") != file_signature:
+    previous_signature = st.session_state.get("uploaded_signature")
+    if previous_signature != file_signature:
         st.session_state["uploaded_signature"] = file_signature
         st.session_state["name_fixes"] = {}
-        if "name_review_editor" in st.session_state:
-            del st.session_state["name_review_editor"]
+        st.session_state.pop("name_review_editor", None)
 
     try:
         # Carga interna de base de datos (sin mostrarla en la UI).
@@ -1774,5 +1779,3 @@ if uploaded_files:
             "Revisa que sea un CSV válido e inténtalo de nuevo."
         )
         st.exception(unexpected_error)
-else:
-    st.info("Empieza subiendo uno o varios archivos CSV para ver la vista previa y aplicar la transformación.")
