@@ -737,6 +737,28 @@ def recalculate_r_bars(final_df: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([preserved_df, recalculated_df], ignore_index=True)
 
 
+def apply_lac_cor_mecanizado(final_df: pd.DataFrame) -> pd.DataFrame:
+    """Asigna "cor." en MECANIZADO para gama LAC con dimensión pequeña y mecanizado vacío."""
+    required_columns = ["Gama", "MECANIZADO", "LenY", "LenZ"]
+    if any(column_name not in final_df.columns for column_name in required_columns):
+        return final_df
+
+    updated_df = final_df.copy()
+    gama_norm = updated_df["Gama"].fillna("").astype(str).str.strip().str.upper()
+    mecanizado_norm = updated_df["MECANIZADO"].fillna("").astype(str).str.strip()
+
+    leny_num = updated_df["LenY"].apply(parse_dimension_to_float)
+    lenz_num = updated_df["LenZ"].apply(parse_dimension_to_float)
+    small_dim = (
+        (leny_num.notna() & (leny_num < 100))
+        | (lenz_num.notna() & (lenz_num < 100))
+    )
+
+    apply_mask = (gama_norm == "LAC") & (mecanizado_norm == "") & small_dim
+    updated_df.loc[apply_mask, "MECANIZADO"] = "cor."
+    return updated_df
+
+
 def fit_dimensions_to_standards(
     final_df: pd.DataFrame,
     df_dimensiones: pd.DataFrame,
@@ -1690,6 +1712,7 @@ else:
         final_df = pd.concat(transformed_dfs, ignore_index=True)
         final_df = fit_dimensions_to_standards(final_df, df_dimensiones, tolerance=1.75)
         final_df = recalculate_r_bars(final_df)
+        final_df = apply_lac_cor_mecanizado(final_df)
         final_df = reorder_result_columns(final_df)
 
         skirting_alerts = detect_skirting_shortage_by_source(final_df)
