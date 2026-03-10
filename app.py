@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import html
 import math
 import re
@@ -1613,6 +1614,22 @@ uploaded_files = st.file_uploader(
 )
 
 if uploaded_files:
+    file_signature = tuple(
+        sorted(
+            (
+                uploaded_file.name,
+                hashlib.sha256(uploaded_file.getvalue()).hexdigest(),
+            )
+            for uploaded_file in uploaded_files
+        )
+    )
+
+    if st.session_state.get("uploaded_signature") != file_signature:
+        st.session_state["uploaded_signature"] = file_signature
+        st.session_state["name_fixes"] = {}
+        if "name_review_editor" in st.session_state:
+            del st.session_state["name_review_editor"]
+
     try:
         # Carga interna de base de datos (sin mostrarla en la UI).
         df_dimensiones, df_materiales, map_aperturas, map_tiradores = get_database()
