@@ -1617,6 +1617,9 @@ if not uploaded_files:
     st.session_state.pop("uploaded_signature", None)
     st.session_state.pop("name_fixes", None)
     st.session_state.pop("name_review_editor", None)
+    st.session_state.pop("corrections_applied", None)
+    st.session_state.pop("final_df_corrected", None)
+    st.session_state.pop("post_issues_df", None)
     st.info("Empieza subiendo uno o varios archivos CSV para ver la vista previa y aplicar la transformación.")
 else:
     file_signature = tuple(
@@ -1634,6 +1637,9 @@ else:
         st.session_state["uploaded_signature"] = file_signature
         st.session_state["name_fixes"] = {}
         st.session_state.pop("name_review_editor", None)
+        st.session_state.pop("corrections_applied", None)
+        st.session_state.pop("final_df_corrected", None)
+        st.session_state.pop("post_issues_df", None)
 
     try:
         # Carga interna de base de datos (sin mostrarla en la UI).
@@ -1695,20 +1701,40 @@ else:
             unsafe_allow_html=True,
         )
         st.caption("La tabla incluye subtítulos por archivo con línea de sección y solo permite editar Observaciones.")
-        final_df = render_sectioned_observaciones_editor(
-            final_df,
+        display_df = st.session_state.get("final_df_corrected", final_df)
+        display_df = render_sectioned_observaciones_editor(
+            display_df,
             source_subtitles,
             "resultado_observaciones_editor",
         )
 
-        issues_df = detect_name_issues(final_df)
+        issues_df = detect_name_issues(display_df)
 
         if "name_fixes" not in st.session_state:
             st.session_state["name_fixes"] = {}
 
-        if issues_df.empty:
+        corrections_applied = st.session_state.get("corrections_applied", False)
+        post_issues_df = st.session_state.get("post_issues_df")
+
+        if corrections_applied:
+            if isinstance(post_issues_df, pd.DataFrame) and not post_issues_df.empty:
+                st.error(
+                    f"Tras aplicar correcciones, aún hay {post_issues_df.shape[0]} piezas con error."
+                )
+                st.dataframe(post_issues_df, width="stretch", hide_index=True)
+            else:
+                st.success("Correcciones aplicadas. Names OK. Puedes descargar el CSV.")
+                st.session_state["final_df_corrected"] = display_df
+                csv_output = display_df.to_csv(index=False).encode("utf-8-sig")
+                st.download_button(
+                    label="Descargar despiece",
+                    data=BytesIO(csv_output),
+                    file_name="resultado_transformado.csv",
+                    mime="text/csv",
+                )
+        elif issues_df.empty:
             st.success("Names OK. Puedes descargar el CSV.")
-            csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
+            csv_output = display_df.to_csv(index=False).encode("utf-8-sig")
             st.download_button(
                 label="Descargar despiece",
                 data=BytesIO(csv_output),
@@ -1748,28 +1774,13 @@ else:
                     updated_fixes[int(row["fila"])] = "" if pd.isna(row["Nuevo Name"]) else str(row["Nuevo Name"]).strip()
 
                 st.session_state["name_fixes"] = updated_fixes
-                final_df = apply_name_fixes(final_df, updated_fixes)
-                post_issues_df = detect_name_issues(final_df)
+                corrected_df = apply_name_fixes(display_df, updated_fixes)
+                post_issues_df = detect_name_issues(corrected_df)
 
-                if post_issues_df.empty:
-                    st.success("Correcciones aplicadas. Names OK. Puedes descargar el CSV.")
-                    final_df = render_sectioned_observaciones_editor(
-                        final_df,
-                        source_subtitles,
-                        "resultado_observaciones_editor_post_fix",
-                    )
-                    csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
-                    st.download_button(
-                        label="Descargar despiece",
-                        data=BytesIO(csv_output),
-                        file_name="resultado_transformado.csv",
-                        mime="text/csv",
-                    )
-                else:
-                    st.error(
-                        f"Tras aplicar correcciones, aún hay {post_issues_df.shape[0]} piezas con error."
-                    )
-                    st.dataframe(post_issues_df, width="stretch", hide_index=True)
+                st.session_state["final_df_corrected"] = corrected_df
+                st.session_state["post_issues_df"] = post_issues_df
+                st.session_state["corrections_applied"] = True
+                st.rerun()
 
     except ValueError as error_message:
         st.error(f"❌ {error_message}")
