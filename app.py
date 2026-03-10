@@ -1606,9 +1606,10 @@ def get_project_id_validation_detail(filename: str) -> str:
 
 
 uploaded_files = st.file_uploader(
-    "1) Sube uno o varios archivos CSV",
+    "Sube uno o varios archivos CSV",
     type=["csv"],
     accept_multiple_files=True,
+    label_visibility="collapsed",
 )
 
 if uploaded_files:
@@ -1668,12 +1669,7 @@ if uploaded_files:
             st.warning(alert_message)
 
         st.markdown(
-            f"<p style='font-size:2.25rem;font-weight:600;margin:0;'>{final_df.shape[0]} piezas</p>",
-            unsafe_allow_html=True,
-        )
-
-        st.markdown(
-            "<h3 style='font-weight:800; margin: 0;'>3) Resultado transformado combinado (Observaciones editables)</h3>",
+            "<h3 style='font-weight:800; margin: 0;'>Despiece para Pre-producción (Observaciones editables)</h3>",
             unsafe_allow_html=True,
         )
         st.caption("La tabla incluye subtítulos por archivo con línea de sección y solo permite editar Observaciones.")
@@ -1683,7 +1679,6 @@ if uploaded_files:
             "resultado_observaciones_editor",
         )
 
-        st.subheader("3) Revisión de Name")
         issues_df = detect_name_issues(final_df)
 
         if "name_fixes" not in st.session_state:
