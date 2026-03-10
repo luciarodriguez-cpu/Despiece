@@ -941,7 +941,7 @@ def validate_name_by_tipologia(
 def detect_name_issues(final_df: pd.DataFrame) -> pd.DataFrame:
     """Detecta Name vacío, formato inválido y duplicados en filas de piezas."""
     name_column = find_column_name(final_df.columns, "Name")
-    tipologia_column = find_column_name(final_df.columns, "Tipologia")
+    tipologia_column = find_column_name(final_df.columns, "Tipologia") or find_column_name(final_df.columns, "Tipología")
     ancho_column = next(
         (find_column_name(final_df.columns, column) for column in ["Ancho", "LenY", "Width"] if find_column_name(final_df.columns, column) is not None),
         None,
