@@ -1640,9 +1640,10 @@ if not uploaded_files:
     st.session_state.pop("name_fixes", None)
     st.session_state.pop("name_review_editor", None)
     st.session_state.pop("name_review_round", None)
-    st.session_state.pop("final_df_work", None)
+    st.session_state.pop("final_df_base", None)
+    st.session_state.pop("final_df_confirmed", None)
+    st.session_state.pop("final_df_candidate", None)
     st.session_state.pop("corrections_applied", None)
-    st.session_state.pop("final_df_corrected", None)
     st.session_state.pop("post_issues_df", None)
     for state_key in list(st.session_state.keys()):
         if str(state_key).startswith("name_review_editor_"):
@@ -1665,9 +1666,10 @@ else:
         st.session_state["name_fixes"] = {}
         st.session_state.pop("name_review_editor", None)
         st.session_state.pop("name_review_round", None)
-        st.session_state.pop("final_df_work", None)
+        st.session_state.pop("final_df_base", None)
+        st.session_state.pop("final_df_confirmed", None)
+        st.session_state.pop("final_df_candidate", None)
         st.session_state.pop("corrections_applied", None)
-        st.session_state.pop("final_df_corrected", None)
         st.session_state.pop("post_issues_df", None)
         for state_key in list(st.session_state.keys()):
             if str(state_key).startswith("name_review_editor_"):
@@ -1734,38 +1736,45 @@ else:
             unsafe_allow_html=True,
         )
         st.caption("La tabla incluye subtítulos por archivo con línea de sección y solo permite editar Observaciones.")
-        display_df = st.session_state.get("final_df_corrected", final_df)
-        display_df = render_sectioned_observaciones_editor(
-            display_df,
-            source_subtitles,
-            "resultado_observaciones_editor",
-        )
 
-        if "final_df_work" not in st.session_state:
-            st.session_state["final_df_work"] = display_df.copy()
+        if "final_df_base" not in st.session_state:
+            st.session_state["final_df_base"] = final_df.copy()
+            st.session_state["final_df_confirmed"] = final_df.copy()
+            st.session_state.pop("final_df_candidate", None)
             st.session_state["name_review_round"] = 0
             st.session_state["name_fixes"] = {}
-        else:
-            st.session_state["final_df_work"] = st.session_state["final_df_work"].copy()
 
         if "name_review_round" not in st.session_state:
             st.session_state["name_review_round"] = 0
         if "name_fixes" not in st.session_state:
             st.session_state["name_fixes"] = {}
 
-        work_df = st.session_state["final_df_work"]
-        issues_df = detect_name_issues(work_df)
+        confirmed_df = st.session_state.get("final_df_confirmed", final_df).copy()
+        display_df = confirmed_df
+        display_df = render_sectioned_observaciones_editor(
+            display_df,
+            source_subtitles,
+            "resultado_observaciones_editor",
+        )
+        st.session_state["final_df_confirmed"] = display_df.copy()
+        confirmed_df = st.session_state["final_df_confirmed"]
 
-        if issues_df.empty:
+        candidate_df = st.session_state.get("final_df_candidate")
+        review_df = candidate_df if candidate_df is not None else confirmed_df
+        issues_df = detect_name_issues(review_df)
+        confirmed_issues_df = detect_name_issues(confirmed_df)
+
+        if confirmed_issues_df.empty:
             st.success("Names OK. Puedes descargar el CSV.")
-            st.session_state["final_df_corrected"] = work_df
-            csv_output = work_df.to_csv(index=False).encode("utf-8-sig")
+            csv_output = confirmed_df.to_csv(index=False).encode("utf-8-sig")
             st.download_button(
                 label="Descargar despiece",
                 data=BytesIO(csv_output),
                 file_name="resultado_transformado.csv",
                 mime="text/csv",
             )
+            st.session_state.pop("final_df_candidate", None)
+            st.session_state.pop("post_issues_df", None)
         else:
             st.error(
                 f"Hay {issues_df.shape[0]} piezas con Name incorrecto o duplicado. Corrige antes de descargar."
@@ -1800,10 +1809,19 @@ else:
                 for _, row in edited_issues.iterrows():
                     updated_fixes[int(row["fila"])] = "" if pd.isna(row["Nuevo Name"]) else str(row["Nuevo Name"]).strip()
 
-                work_df2 = apply_name_fixes(work_df, updated_fixes)
-                st.session_state["final_df_work"] = work_df2
+                candidate_after_apply = apply_name_fixes(confirmed_df, updated_fixes)
+                post_issues = detect_name_issues(candidate_after_apply)
+
                 st.session_state["name_fixes"] = updated_fixes
                 st.session_state["name_review_round"] = current_round + 1
+                st.session_state["post_issues_df"] = post_issues
+
+                if post_issues.empty:
+                    st.session_state["final_df_confirmed"] = candidate_after_apply
+                    st.session_state.pop("final_df_candidate", None)
+                else:
+                    st.session_state["final_df_candidate"] = candidate_after_apply
+
                 st.session_state.pop(editor_key, None)
                 st.rerun()
 
