@@ -66,7 +66,7 @@ Se abrirá en el navegador, normalmente en `http://localhost:8501`.
    - Filas y columnas.
    - Vista previa original.
    - Tabla transformada.
-4. Pulsa **“Descargar CSV transformado”** para bajar el resultado.
+4. Pulsa **“Descargar despiece”** para bajar el resultado.
 
 ---
 
