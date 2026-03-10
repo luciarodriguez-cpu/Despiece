@@ -1688,7 +1688,7 @@ if uploaded_files:
             st.success("Names OK. Puedes descargar el CSV.")
             csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
             st.download_button(
-                label="4) Descargar despiece",
+                label="Descargar despiece",
                 data=BytesIO(csv_output),
                 file_name="resultado_transformado.csv",
                 mime="text/csv",
@@ -1738,7 +1738,7 @@ if uploaded_files:
                     )
                     csv_output = final_df.to_csv(index=False).encode("utf-8-sig")
                     st.download_button(
-                        label="4) Descargar despiece",
+                        label="Descargar despiece",
                         data=BytesIO(csv_output),
                         file_name="resultado_transformado.csv",
                         mime="text/csv",
