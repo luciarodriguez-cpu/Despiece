@@ -1639,9 +1639,14 @@ if not uploaded_files:
     st.session_state.pop("uploaded_signature", None)
     st.session_state.pop("name_fixes", None)
     st.session_state.pop("name_review_editor", None)
+    st.session_state.pop("name_review_round", None)
+    st.session_state.pop("final_df_work", None)
     st.session_state.pop("corrections_applied", None)
     st.session_state.pop("final_df_corrected", None)
     st.session_state.pop("post_issues_df", None)
+    for state_key in list(st.session_state.keys()):
+        if str(state_key).startswith("name_review_editor_"):
+            st.session_state.pop(state_key, None)
     st.info("Empieza subiendo uno o varios archivos CSV para ver la vista previa y aplicar la transformación.")
 else:
     file_signature = tuple(
@@ -1659,9 +1664,14 @@ else:
         st.session_state["uploaded_signature"] = file_signature
         st.session_state["name_fixes"] = {}
         st.session_state.pop("name_review_editor", None)
+        st.session_state.pop("name_review_round", None)
+        st.session_state.pop("final_df_work", None)
         st.session_state.pop("corrections_applied", None)
         st.session_state.pop("final_df_corrected", None)
         st.session_state.pop("post_issues_df", None)
+        for state_key in list(st.session_state.keys()):
+            if str(state_key).startswith("name_review_editor_"):
+                st.session_state.pop(state_key, None)
 
     try:
         # Carga interna de base de datos (sin mostrarla en la UI).
@@ -1731,33 +1741,25 @@ else:
             "resultado_observaciones_editor",
         )
 
-        issues_df = detect_name_issues(display_df)
+        if "final_df_work" not in st.session_state:
+            st.session_state["final_df_work"] = display_df.copy()
+            st.session_state["name_review_round"] = 0
+            st.session_state["name_fixes"] = {}
+        else:
+            st.session_state["final_df_work"] = st.session_state["final_df_work"].copy()
 
+        if "name_review_round" not in st.session_state:
+            st.session_state["name_review_round"] = 0
         if "name_fixes" not in st.session_state:
             st.session_state["name_fixes"] = {}
 
-        corrections_applied = st.session_state.get("corrections_applied", False)
-        post_issues_df = st.session_state.get("post_issues_df")
+        work_df = st.session_state["final_df_work"]
+        issues_df = detect_name_issues(work_df)
 
-        if corrections_applied:
-            if isinstance(post_issues_df, pd.DataFrame) and not post_issues_df.empty:
-                st.error(
-                    f"Tras aplicar correcciones, aún hay {post_issues_df.shape[0]} piezas con error."
-                )
-                st.dataframe(post_issues_df, width="stretch", hide_index=True)
-            else:
-                st.success("Correcciones aplicadas. Names OK. Puedes descargar el CSV.")
-                st.session_state["final_df_corrected"] = display_df
-                csv_output = display_df.to_csv(index=False).encode("utf-8-sig")
-                st.download_button(
-                    label="Descargar despiece",
-                    data=BytesIO(csv_output),
-                    file_name="resultado_transformado.csv",
-                    mime="text/csv",
-                )
-        elif issues_df.empty:
+        if issues_df.empty:
             st.success("Names OK. Puedes descargar el CSV.")
-            csv_output = display_df.to_csv(index=False).encode("utf-8-sig")
+            st.session_state["final_df_corrected"] = work_df
+            csv_output = work_df.to_csv(index=False).encode("utf-8-sig")
             st.download_button(
                 label="Descargar despiece",
                 data=BytesIO(csv_output),
@@ -1776,6 +1778,8 @@ else:
                 if row_index in current_fixes:
                     issues_to_edit.at[edit_index, "Nuevo Name"] = current_fixes[row_index]
 
+            current_round = int(st.session_state.get("name_review_round", 0))
+            editor_key = f"name_review_editor_{current_round}"
             edited_issues = st.data_editor(
                 issues_to_edit,
                 width="stretch",
@@ -1788,7 +1792,7 @@ else:
                         help="Edita solo este campo para proponer correcciones.",
                     )
                 },
-                key="name_review_editor",
+                key=editor_key,
             )
 
             if st.button("Aplicar correcciones", type="primary"):
@@ -1796,13 +1800,11 @@ else:
                 for _, row in edited_issues.iterrows():
                     updated_fixes[int(row["fila"])] = "" if pd.isna(row["Nuevo Name"]) else str(row["Nuevo Name"]).strip()
 
+                work_df2 = apply_name_fixes(work_df, updated_fixes)
+                st.session_state["final_df_work"] = work_df2
                 st.session_state["name_fixes"] = updated_fixes
-                corrected_df = apply_name_fixes(display_df, updated_fixes)
-                post_issues_df = detect_name_issues(corrected_df)
-
-                st.session_state["final_df_corrected"] = corrected_df
-                st.session_state["post_issues_df"] = post_issues_df
-                st.session_state["corrections_applied"] = True
+                st.session_state["name_review_round"] = current_round + 1
+                st.session_state.pop(editor_key, None)
                 st.rerun()
 
     except ValueError as error_message:
