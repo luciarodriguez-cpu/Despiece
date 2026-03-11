@@ -1812,15 +1812,28 @@ else:
                 candidate_after_apply = apply_name_fixes(confirmed_df, updated_fixes)
                 post_issues = detect_name_issues(candidate_after_apply)
 
-                st.session_state["name_fixes"] = updated_fixes
-                st.session_state["name_review_round"] = current_round + 1
-                st.session_state["post_issues_df"] = post_issues
+                invalid_rows = set()
+                if not post_issues.empty:
+                    invalid_rows = set(post_issues["fila"].astype(int).tolist())
 
-                if post_issues.empty:
-                    st.session_state["final_df_confirmed"] = candidate_after_apply
+                valid_fixes = {row: val for row, val in updated_fixes.items() if row not in invalid_rows}
+                pending_fixes = {row: val for row, val in updated_fixes.items() if row in invalid_rows}
+
+                confirmed_updated = confirmed_df
+                if valid_fixes:
+                    confirmed_updated = apply_name_fixes(confirmed_df, valid_fixes)
+                st.session_state["final_df_confirmed"] = confirmed_updated
+
+                st.session_state["name_fixes"] = pending_fixes
+                st.session_state["name_review_round"] = current_round + 1
+
+                if not pending_fixes:
                     st.session_state.pop("final_df_candidate", None)
+                    st.session_state.pop("post_issues_df", None)
                 else:
-                    st.session_state["final_df_candidate"] = candidate_after_apply
+                    candidate_pending = apply_name_fixes(confirmed_updated, pending_fixes)
+                    st.session_state["final_df_candidate"] = candidate_pending
+                    st.session_state["post_issues_df"] = detect_name_issues(candidate_pending)
 
                 st.session_state.pop(editor_key, None)
                 st.rerun()
