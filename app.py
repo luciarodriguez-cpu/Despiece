@@ -1835,6 +1835,8 @@ else:
 
             current_round = int(st.session_state.get("name_review_round", 0))
             editor_key = f"name_review_editor_{current_round}"
+            if is_multi_csv:
+                st.caption("No añadas el prefijo en la corrección del nombre de la pieza. Se añade automáticamente")
             edited_issues = st.data_editor(
                 issues_to_edit,
                 width="stretch",
