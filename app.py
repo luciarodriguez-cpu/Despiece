@@ -1713,6 +1713,22 @@ else:
         original_dfs: list[pd.DataFrame] = []
         seen_names: set[str] = set()
 
+        if len(uploaded_files) > 1:
+            project_ids: list[str] = []
+            for uploaded_file in uploaded_files:
+                project_id = get_project_id_from_filename(uploaded_file.name)
+                try:
+                    validate_project_id(project_id)
+                except ValueError as exc:
+                    detail = get_project_id_validation_detail(uploaded_file.name)
+                    raise ValueError(
+                        f"Error en '{uploaded_file.name}': {exc} Detalle del nombre recibido: {detail}"
+                    ) from exc
+                project_ids.append(project_id)
+
+            if len(set(project_ids)) > 1:
+                raise ValueError("Ambos informes deben pertenecer al mismo proyecto y empezar por el mismo ID")
+
         transformed_dfs: list[pd.DataFrame] = []
         source_subtitles: list[str] = []
         for file_position, uploaded_file in enumerate(uploaded_files, start=1):
