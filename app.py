@@ -1092,7 +1092,7 @@ def apply_name_fixes(final_df: pd.DataFrame, name_fixes: dict[int, str]) -> pd.D
     return updated_df
 
 
-def detect_skirting_shortage_by_source(final_df: pd.DataFrame) -> list[str]:
+def detect_skirting_shortage_by_source(final_df: pd.DataFrame) -> list[dict[str, float | str]]:
     """Detecta por CSV si LenZ de tipología R es menor que LenY único de M<n> en tipología P."""
     if final_df.empty:
         return []
@@ -1107,7 +1107,7 @@ def detect_skirting_shortage_by_source(final_df: pd.DataFrame) -> list[str]:
     if any(column_name is None for column_name in required_columns):
         return []
 
-    alerts: list[str] = []
+    alerts: list[dict[str, float | str]] = []
     order_series = final_df[order_column].fillna("").astype(str).str.strip()
 
     for order_value in pd.unique(order_series):
@@ -1142,8 +1142,11 @@ def detect_skirting_shortage_by_source(final_df: pd.DataFrame) -> list[str]:
 
         if lenz_sum < leny_sum:
             alerts.append(
-                "Cuidado: Es posible que haya menos rodapiés de los necesarios en el despiece"
-                f" (CSV {order_value}: LenZ R={lenz_sum:.2f}, LenY M únicos={leny_sum:.2f})."
+                {
+                    "order_value": order_value,
+                    "lenz_sum": float(lenz_sum),
+                    "leny_sum": float(leny_sum),
+                }
             )
 
     return alerts
@@ -1772,10 +1775,6 @@ else:
         final_df = apply_lac_cor_mecanizado(final_df)
         final_df = reorder_result_columns(final_df)
 
-        skirting_alerts = detect_skirting_shortage_by_source(final_df)
-        for alert_message in skirting_alerts:
-            st.warning(alert_message)
-
         st.markdown(
             "<h3 style='font-weight:800; margin: 0;'>Despiece para Pre-producción (Observaciones editables)</h3>",
             unsafe_allow_html=True,
@@ -1812,6 +1811,23 @@ else:
         if confirmed_issues_df.empty:
             st.success("Names OK. Puedes descargar el CSV.")
             csv_output = confirmed_df.to_csv(index=False).encode("utf-8-sig")
+            skirting_alerts_data = detect_skirting_shortage_by_source(confirmed_df)
+            for alert in skirting_alerts_data:
+                order = str(alert.get("order_value", "")).strip()
+                lenz = float(alert.get("lenz_sum", 0.0))
+                leny = float(alert.get("leny_sum", 0.0))
+                subtitulo = f"Bloque {order}"
+                if order.isdigit():
+                    idx = int(order) - 1
+                    if 0 <= idx < len(source_subtitles):
+                        subtitulo = source_subtitles[idx]
+
+                lenz_mm = int(round(lenz))
+                leny_mm = int(round(leny))
+                st.warning(
+                    "Cuidado: Es posible que haya menos rodapiés de los necesarios en el despiece "
+                    f"(REFERENCIA: {subtitulo} | Rodapiés: {lenz_mm} mm | Longitud de módulos: {leny_mm} mm)."
+                )
             st.download_button(
                 label="Descargar despiece",
                 data=BytesIO(csv_output),
