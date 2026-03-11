@@ -48,6 +48,19 @@ st.markdown(
     'Recuerda que el nombre debe estar en formato *XX-00000 Nombre de cliente*.'
 )
 
+st.markdown(
+    """
+    <style>
+      /* Refuerza las líneas de la tabla para mejorar visibilidad. */
+      .stDataFrame table th,
+      .stDataFrame table td {
+        border: 1px solid rgba(49, 51, 63, 0.35) !important;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 def _read_csv_with_fallback(path: Path, keep_empty_strings: bool = False) -> pd.DataFrame:
     """Lee CSV de base de datos probando separador coma y punto y coma."""
@@ -362,17 +375,33 @@ def reorder_result_columns(df: pd.DataFrame) -> pd.DataFrame:
 def render_observaciones_editor(df: pd.DataFrame, editor_key: str) -> pd.DataFrame:
     """Muestra el resultado permitiendo editar únicamente la columna Observaciones."""
     if "Observaciones" not in df.columns:
-        st.dataframe(df, width="stretch", hide_index=True)
+        st.dataframe(
+            df,
+            width="stretch",
+            hide_index=False,
+            column_config={
+                "_index": st.column_config.NumberColumn(
+                    "Línea",
+                    help="Número de línea de referencia en la tabla.",
+                    format="%d",
+                )
+            },
+        )
         return df
 
     disabled_columns = [col for col in df.columns if col != "Observaciones"]
     return st.data_editor(
         df,
         width="stretch",
-        hide_index=True,
+        hide_index=False,
         num_rows="fixed",
         disabled=disabled_columns,
         column_config={
+            "_index": st.column_config.NumberColumn(
+                "Línea",
+                help="Número de línea de referencia en la tabla.",
+                format="%d",
+            ),
             "Observaciones": st.column_config.TextColumn(
                 "Observaciones",
                 help="Puedes editar esta columna antes de descargar el CSV.",
