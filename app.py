@@ -359,6 +359,193 @@ def find_column_name(columns: pd.Index, target_name: str) -> str | None:
     return None
 
 
+def natural_sort_key(value: object) -> tuple[object, ...]:
+    """Genera clave alfanumérica natural: M2 < M10, C2 < C10."""
+    text = "" if pd.isna(value) else str(value).strip()
+    tokens = re.findall(r"\d+|\D+", text.upper())
+    key: list[object] = []
+    for token in tokens:
+        if token.isdigit():
+            key.append(int(token))
+        else:
+            key.append(token)
+    return tuple(key)
+
+
+def get_core_name(name_value: object) -> str:
+    """Elimina prefijo de origen de una letra y guion (A-, B-, ...), si existe."""
+    text = "" if pd.isna(name_value) else str(name_value).strip()
+    return re.sub(r"^[A-Za-z]-", "", text, count=1)
+
+
+def _sort_result_rows_single_block(df_block: pd.DataFrame) -> pd.DataFrame:
+    """Aplica reglas de ordenación de piezas en un único bloque de resultados."""
+    if df_block.empty:
+        return df_block.copy()
+
+    tipologia_column = find_column_name(df_block.columns, "Tipologia") or find_column_name(df_block.columns, "Tipología")
+    name_column = find_column_name(df_block.columns, "Name")
+    gama_column = find_column_name(df_block.columns, "Gama")
+    acabado_column = find_column_name(df_block.columns, "Acabado")
+
+    if name_column is None:
+        return df_block.copy().reset_index(drop=True)
+
+    work_df = df_block.copy()
+    work_df["__orig_pos"] = range(len(work_df))
+    work_df["__core_name"] = work_df[name_column].map(get_core_name)
+    work_df["__natural"] = work_df["__core_name"].map(natural_sort_key)
+
+    if tipologia_column is None:
+        ordered = work_df.sort_values(by=["__natural", "__orig_pos"], kind="stable")
+        return ordered[df_block.columns].reset_index(drop=True)
+
+    tip_series = work_df[tipologia_column].fillna("").astype(str).str.strip().str.upper().str[:1]
+    work_df["__tip"] = tip_series
+
+    m_match = work_df["__core_name"].str.extract(r"^M(\d+)-", expand=False)
+    work_df["__grupo_m"] = pd.to_numeric(m_match, errors="coerce")
+
+    if gama_column is not None and acabado_column is not None:
+        work_df["__pair"] = list(
+            zip(
+                work_df[gama_column].fillna("").astype(str).str.strip().str.upper(),
+                work_df[acabado_column].fillna("").astype(str).str.strip().str.upper(),
+            )
+        )
+    else:
+        work_df["__pair"] = [("", "") for _ in range(len(work_df))]
+
+    is_r = work_df["__tip"] == "R"
+    is_e = work_df["__tip"] == "E"
+    is_b = work_df["__tip"] == "B"
+    in_m_group = work_df["__grupo_m"].notna()
+    is_lt = work_df["__tip"].isin(["L", "T"])
+
+    rule1_mask = (~is_r) & (~is_e) & in_m_group
+    rule2_mask = (~is_r) & (~is_e) & (~in_m_group) & is_lt
+    b_non_m_mask = is_b & (~in_m_group)
+    pre_r_other_mask = (~is_r) & (~is_e) & (~rule1_mask) & (~rule2_mask) & (~b_non_m_mask)
+
+    rule1_df = work_df[rule1_mask].copy()
+    if not rule1_df.empty:
+        rule1_df["__rule1_sub"] = 2
+        rule1_df.loc[rule1_df["__tip"].isin(["C", "P", "B"]), "__rule1_sub"] = 0
+        rule1_df.loc[rule1_df["__tip"].isin(["L", "T"]), "__rule1_sub"] = 1
+        rule1_df = rule1_df.sort_values(
+            by=["__grupo_m", "__rule1_sub", "__natural", "__orig_pos"],
+            kind="stable",
+        )
+
+    rule2_df = work_df[rule2_mask].sort_values(by=["__natural", "__orig_pos"], kind="stable")
+    pre_r_other_df = work_df[pre_r_other_mask].sort_values(by=["__natural", "__orig_pos"], kind="stable")
+
+    non_r_df = pd.concat([rule1_df, rule2_df, pre_r_other_df], axis=0)
+    ordered_indexes: list[int] = []
+
+    if not non_r_df.empty:
+        ordered_indexes.extend(non_r_df.index.tolist())
+
+    r_df = work_df[is_r].sort_values(by=["__natural", "__orig_pos"], kind="stable")
+    if not r_df.empty:
+        if gama_column is not None and acabado_column is not None and not non_r_df.empty:
+            ordered_indexes = []
+            inserted_pairs: set[tuple[str, str]] = set()
+            r_groups: dict[tuple[str, str], list[int]] = {
+                pair: group.index.tolist()
+                for pair, group in r_df.groupby("__pair", sort=False)
+            }
+
+            non_r_reset = non_r_df.reset_index()
+            current_pair: tuple[str, str] | None = None
+            current_block: list[int] = []
+
+            for _, row in non_r_reset.iterrows():
+                row_pair = row["__pair"]
+                row_index = int(row["index"])
+                if current_pair is None or row_pair == current_pair:
+                    current_pair = row_pair
+                    current_block.append(row_index)
+                    continue
+
+                ordered_indexes.extend(current_block)
+                if current_pair in r_groups and current_pair not in inserted_pairs:
+                    ordered_indexes.extend(r_groups[current_pair])
+                    inserted_pairs.add(current_pair)
+
+                current_pair = row_pair
+                current_block = [row_index]
+
+            if current_block:
+                ordered_indexes.extend(current_block)
+                if current_pair in r_groups and current_pair not in inserted_pairs:
+                    ordered_indexes.extend(r_groups[current_pair])
+                    inserted_pairs.add(current_pair)
+
+            remaining_r_indexes: list[int] = []
+            for pair, indexes in r_groups.items():
+                if pair in inserted_pairs:
+                    continue
+                remaining_r_indexes.extend(indexes)
+            ordered_indexes.extend(remaining_r_indexes)
+        else:
+            ordered_indexes.extend(r_df.index.tolist())
+
+    e_df = work_df[is_e].sort_values(by=["__natural", "__orig_pos"], kind="stable")
+    ordered_indexes.extend(e_df.index.tolist())
+
+    b_non_m_df = work_df[b_non_m_mask].sort_values(by=["__natural", "__orig_pos"], kind="stable")
+    ordered_indexes.extend(b_non_m_df.index.tolist())
+
+    ordered_seen = set(ordered_indexes)
+    leftovers = [idx for idx in work_df.index if idx not in ordered_seen]
+    ordered_indexes.extend(leftovers)
+
+    sorted_block = work_df.loc[ordered_indexes, df_block.columns]
+    return sorted_block.reset_index(drop=True)
+
+
+def sort_result_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Ordena filas finales por reglas de tipología y bloques de Orden CSV."""
+    if df.empty:
+        return df.copy()
+
+    order_column = find_column_name(df.columns, "Orden CSV")
+    if order_column is None:
+        return _sort_result_rows_single_block(df).reset_index(drop=True)
+
+    order_values = df[order_column].fillna("").astype(str).str.strip()
+    unique_order_values = [value for value in pd.unique(order_values) if value != ""]
+
+    numeric_values: list[tuple[int, str]] = []
+    all_numeric = True
+    for value in unique_order_values:
+        if re.fullmatch(r"\d+", value):
+            numeric_values.append((int(value), value))
+        else:
+            all_numeric = False
+            break
+
+    if all_numeric:
+        ordered_blocks = [value for _, value in sorted(numeric_values, key=lambda item: item[0])]
+    else:
+        ordered_blocks = unique_order_values
+
+    sorted_parts: list[pd.DataFrame] = []
+    for block_value in ordered_blocks:
+        block_df = df[order_values == block_value].copy()
+        sorted_parts.append(_sort_result_rows_single_block(block_df))
+
+    empty_block_df = df[order_values == ""].copy()
+    if not empty_block_df.empty:
+        sorted_parts.append(_sort_result_rows_single_block(empty_block_df))
+
+    if not sorted_parts:
+        return df.copy().reset_index(drop=True)
+
+    return pd.concat(sorted_parts, ignore_index=True)
+
+
 def reorder_result_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Reordena columnas de salida priorizando el orden funcional solicitado."""
     reordered = df.copy()
@@ -1774,6 +1961,7 @@ else:
         final_df = recalculate_r_bars(final_df)
         final_df = apply_lac_cor_mecanizado(final_df)
         final_df = reorder_result_columns(final_df)
+        final_df = sort_result_rows(final_df)
 
         st.markdown(
             "<h3 style='font-weight:800; margin: 0;'>Despiece para Pre-producción (Observaciones editables)</h3>",
@@ -1903,7 +2091,7 @@ else:
                     else:
                         updated_fixes[row_index] = core_value
 
-                candidate_after_apply = apply_name_fixes(confirmed_df, updated_fixes)
+                candidate_after_apply = sort_result_rows(apply_name_fixes(confirmed_df, updated_fixes))
                 post_issues = detect_name_issues(candidate_after_apply)
 
                 invalid_rows = set()
@@ -1915,7 +2103,7 @@ else:
 
                 confirmed_updated = confirmed_df
                 if valid_fixes:
-                    confirmed_updated = apply_name_fixes(confirmed_df, valid_fixes)
+                    confirmed_updated = sort_result_rows(apply_name_fixes(confirmed_df, valid_fixes))
                 st.session_state["final_df_confirmed"] = confirmed_updated
 
                 st.session_state["name_fixes"] = pending_fixes
@@ -1925,7 +2113,7 @@ else:
                     st.session_state.pop("final_df_candidate", None)
                     st.session_state.pop("post_issues_df", None)
                 else:
-                    candidate_pending = apply_name_fixes(confirmed_updated, pending_fixes)
+                    candidate_pending = sort_result_rows(apply_name_fixes(confirmed_updated, pending_fixes))
                     st.session_state["final_df_candidate"] = candidate_pending
                     st.session_state["post_issues_df"] = detect_name_issues(candidate_pending)
 
