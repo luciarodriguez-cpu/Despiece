@@ -1811,10 +1811,27 @@ else:
 
             current_fixes = st.session_state.get("name_fixes", {})
             issues_to_edit = issues_df.copy()
+            is_multi_csv = len(uploaded_files) > 1
+
+            def split_name_prefix(raw_name: str) -> tuple[str, str]:
+                name_value = "" if pd.isna(raw_name) else str(raw_name).strip()
+                match = re.match(r"^([A-Za-z]-)(.*)$", name_value)
+                if not match:
+                    return "", name_value
+                return match.group(1), match.group(2)
+
             for edit_index, issue_row in issues_to_edit.iterrows():
                 row_index = int(issue_row["fila"])
                 if row_index in current_fixes:
                     issues_to_edit.at[edit_index, "Nuevo Name"] = current_fixes[row_index]
+
+            if is_multi_csv:
+                issues_to_edit["Prefijo"] = issues_to_edit["Name actual"].apply(
+                    lambda value: split_name_prefix(value)[0]
+                )
+                issues_to_edit["Nuevo Name"] = issues_to_edit["Nuevo Name"].apply(
+                    lambda value: split_name_prefix(value)[1]
+                )
 
             current_round = int(st.session_state.get("name_review_round", 0))
             editor_key = f"name_review_editor_{current_round}"
@@ -1823,8 +1840,14 @@ else:
                 width="stretch",
                 hide_index=True,
                 num_rows="fixed",
-                disabled=["fila", "Tipologia", "Name actual", "Motivo del error"],
+                disabled=["fila", "Tipologia", "Name actual", "Motivo del error", "Prefijo"]
+                if is_multi_csv
+                else ["fila", "Tipologia", "Name actual", "Motivo del error"],
                 column_config={
+                    "Prefijo": st.column_config.TextColumn(
+                        "Prefijo",
+                        help="Prefijo fijo según el CSV de origen.",
+                    ),
                     "Nuevo Name": st.column_config.TextColumn(
                         "Nuevo Name",
                         help="Edita solo este campo para proponer correcciones.",
@@ -1836,7 +1859,15 @@ else:
             if st.button("Aplicar correcciones", type="primary"):
                 updated_fixes: dict[int, str] = {}
                 for _, row in edited_issues.iterrows():
-                    updated_fixes[int(row["fila"])] = "" if pd.isna(row["Nuevo Name"]) else str(row["Nuevo Name"]).strip()
+                    row_index = int(row["fila"])
+                    core_value = "" if pd.isna(row["Nuevo Name"]) else str(row["Nuevo Name"]).strip()
+                    if is_multi_csv:
+                        prefix_value = ""
+                        if "Prefijo" in row:
+                            prefix_value = "" if pd.isna(row["Prefijo"]) else str(row["Prefijo"]).strip()
+                        updated_fixes[row_index] = f"{prefix_value}{core_value}" if prefix_value else core_value
+                    else:
+                        updated_fixes[row_index] = core_value
 
                 candidate_after_apply = apply_name_fixes(confirmed_df, updated_fixes)
                 post_issues = detect_name_issues(candidate_after_apply)
