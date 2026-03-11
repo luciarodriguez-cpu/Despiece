@@ -450,44 +450,41 @@ def _sort_result_rows_single_block(df_block: pd.DataFrame) -> pd.DataFrame:
     if not r_df.empty:
         if gama_column is not None and acabado_column is not None and not non_r_df.empty:
             ordered_indexes = []
-            inserted_pairs: set[tuple[str, str]] = set()
             r_groups: dict[tuple[str, str], list[int]] = {
                 pair: group.index.tolist()
                 for pair, group in r_df.groupby("__pair", sort=False)
             }
 
-            non_r_reset = non_r_df.reset_index()
-            current_pair: tuple[str, str] | None = None
-            current_block: list[int] = []
+            positions_by_ga: dict[tuple[str, str], list[int]] = {}
+            for position, pair in enumerate(non_r_df["__pair"].tolist()):
+                positions_by_ga.setdefault(pair, []).append(position)
 
-            for _, row in non_r_reset.iterrows():
-                row_pair = row["__pair"]
-                row_index = int(row["index"])
-                if current_pair is None or row_pair == current_pair:
-                    current_pair = row_pair
-                    current_block.append(row_index)
+            valid_block_end_index: dict[tuple[str, str], int] = {}
+            for pair, positions in positions_by_ga.items():
+                if not positions:
                     continue
+                if positions[-1] - positions[0] + 1 == len(positions):
+                    valid_block_end_index[pair] = positions[-1]
 
-                ordered_indexes.extend(current_block)
-                if current_pair in r_groups and current_pair not in inserted_pairs:
-                    ordered_indexes.extend(r_groups[current_pair])
-                    inserted_pairs.add(current_pair)
+            non_r_ordered_indices = non_r_df.index.tolist()
+            inserted_pairs: set[tuple[str, str]] = set()
+            unmatched_r_rows: list[int] = []
 
-                current_pair = row_pair
-                current_block = [row_index]
+            for position, non_r_index in enumerate(non_r_ordered_indices):
+                ordered_indexes.append(non_r_index)
+                for pair, r_indexes in r_groups.items():
+                    if pair in inserted_pairs:
+                        continue
+                    if valid_block_end_index.get(pair) == position:
+                        ordered_indexes.extend(r_indexes)
+                        inserted_pairs.add(pair)
 
-            if current_block:
-                ordered_indexes.extend(current_block)
-                if current_pair in r_groups and current_pair not in inserted_pairs:
-                    ordered_indexes.extend(r_groups[current_pair])
-                    inserted_pairs.add(current_pair)
-
-            remaining_r_indexes: list[int] = []
-            for pair, indexes in r_groups.items():
+            for pair, r_indexes in r_groups.items():
                 if pair in inserted_pairs:
                     continue
-                remaining_r_indexes.extend(indexes)
-            ordered_indexes.extend(remaining_r_indexes)
+                unmatched_r_rows.extend(r_indexes)
+
+            ordered_indexes.extend(unmatched_r_rows)
         else:
             ordered_indexes.extend(r_df.index.tolist())
 
