@@ -979,10 +979,6 @@ def _sync_open_cabinets_count(target_count: int) -> None:
     if len(cabinets) > target_count:
         del cabinets[target_count:]
 
-        if st.button("Editar", key=f"mueble_abierto_editar_{index}", use_container_width=True):
-            st.session_state["muebles_abiertos"][index]["aceptado"] = False
-            st.session_state["muebles_abiertos"][index]["svg"] = ""
-            st.rerun()
 
 def _build_open_cabinet_description(cabinet: dict[str, object]) -> str:
     """Construye descripción textual del mueble abierto con pluralización."""
@@ -1007,8 +1003,28 @@ def _render_open_cabinet_card(index: int) -> None:
               [class*="st-key-mueble_card_"] {
                 background-color: #fbfcff;
                 border-radius: 12px;
-                padding: 0.5rem;
-                margin-bottom: 0.5rem;
+                padding: 0.35rem;
+                margin: 0 auto 0.5rem auto;
+                width: 270px;
+                max-width: 270px;
+                min-height: 430px;
+              }
+              [class*="st-key-mueble_card_"] .open-cabinet-preview {
+                width: 200px;
+                height: 160px;
+                margin: 8px auto;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+                border: 1px solid #e7ebf2;
+                border-radius: 8px;
+                background: #ffffff;
+              }
+              [class*="st-key-mueble_card_"] .open-cabinet-preview svg {
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
               }
             </style>
             """,
@@ -1096,7 +1112,7 @@ def _render_open_cabinet_card(index: int) -> None:
         else:
             svg = str(cabinet.get("svg", ""))
             st.markdown(
-                f"<div style='width:220px; margin:8px auto'>{svg}</div>",
+                f"<div class='open-cabinet-preview'>{svg}</div>",
                 unsafe_allow_html=True,
             )
             st.caption(_build_open_cabinet_description(cabinet))
@@ -1111,29 +1127,35 @@ def render_open_cabinet_generator_section() -> None:
     """Renderiza sección de muebles abiertos con tarjetas independientes."""
     _ensure_open_cabinets_state()
 
-    if st.button("Añadir muebles abiertos"):
-        st.session_state["open_cabinets_visible"] = True
+    control_col_button, control_col_select = st.columns([3.4, 1], vertical_alignment="bottom")
+    with control_col_button:
+        if st.button("Añadir muebles abiertos"):
+            st.session_state["open_cabinets_visible"] = True
 
     if not st.session_state["open_cabinets_visible"]:
         return
 
     current_count = len(st.session_state["muebles_abiertos"])
-    cantidad_muebles_abiertos = int(
-        st.number_input(
-            "Cantidad de muebles abiertos",
-            min_value=0,
-            max_value=20,
-            step=1,
-            value=current_count,
-            key="cantidad_muebles_abiertos",
+    opciones_cantidad = list(range(0, 11))
+    default_index = current_count if current_count in opciones_cantidad else min(current_count, 10)
+
+    with control_col_select:
+        cantidad_muebles_abiertos = int(
+            st.selectbox(
+                "Cantidad",
+                options=opciones_cantidad,
+                index=default_index,
+                key="cantidad_muebles_abiertos",
+                label_visibility="collapsed",
+            )
         )
-    )
+
     _sync_open_cabinets_count(cantidad_muebles_abiertos)
 
-    cards_per_row = 3
+    cards_per_row = 4
     for row_start in range(0, cantidad_muebles_abiertos, cards_per_row):
         row_indexes = range(row_start, min(row_start + cards_per_row, cantidad_muebles_abiertos))
-        row_columns = st.columns(cards_per_row)
+        row_columns = st.columns(cards_per_row, gap="small")
         for col_position, card_index in enumerate(row_indexes):
             with row_columns[col_position]:
                 _render_open_cabinet_card(card_index)
