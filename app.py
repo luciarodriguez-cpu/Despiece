@@ -41,6 +41,8 @@ EXPECTED_COLUMNS = {
     "tiradores.csv": ["clave_tirador", "valor_tirador"],
 }
 
+ACABADOS_FILE = "tabla_colores_cubro_con_hex.csv"
+
 
 # Título y breve explicación para usuarios sin perfil técnico.
 st.title("📋 Despiece")
@@ -128,10 +130,42 @@ def load_database() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str], dict[st
     return df_dimensiones, df_materiales, map_aperturas, map_tiradores
 
 
+def load_acabados() -> tuple[pd.DataFrame, list[str]]:
+    """Carga tabla de acabados CUBRO y devuelve DataFrame + lista para selectbox."""
+    root_dir = Path(__file__).resolve().parent
+    acabados_path = root_dir / "data" / ACABADOS_FILE
+
+    if not acabados_path.exists():
+        raise FileNotFoundError(
+            f"No se encontró el archivo de acabados '{ACABADOS_FILE}'. "
+            f"Ruta evaluada: {acabados_path}"
+        )
+
+    df_acabados = _read_csv_with_fallback(acabados_path)
+    _validate_columns(df_acabados, ["Color CUBRO", "HEX"], ACABADOS_FILE)
+
+    lista_acabados = (
+        df_acabados["Color CUBRO"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .loc[lambda series: series != ""]
+        .tolist()
+    )
+
+    return df_acabados, lista_acabados
+
+
 @st.cache_data(show_spinner=False)
 def get_database() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str], dict[str, str]]:
     """Cachea la base de datos para no recargar archivos en cada interacción."""
     return load_database()
+
+
+@st.cache_data(show_spinner=False)
+def get_acabados() -> tuple[pd.DataFrame, list[str]]:
+    """Cachea la tabla de acabados para reutilizarla en todas las tarjetas."""
+    return load_acabados()
 
 
 def detect_encoding(file_bytes: bytes) -> str:
@@ -958,6 +992,7 @@ def _default_open_cabinet() -> dict[str, object]:
         "num_baldas": 1,
         "colgado": False,
         "zocalo_mm": 0,
+        "acabado": "",
         "aceptado": False,
         "svg": "",
     }
@@ -1010,6 +1045,7 @@ def _build_open_cabinet_description(cabinet: dict[str, object]) -> str:
 def _render_open_cabinet_card(index: int) -> None:
     """Renderiza una tarjeta individual de mueble abierto con modo editar/aceptado."""
     cabinet = st.session_state["muebles_abiertos"][index]
+    df_acabados, lista_acabados = get_acabados()
 
     card_key = f"mueble_card_{index}"
     with st.container(key=card_key, border=True):
@@ -1104,6 +1140,19 @@ def _render_open_cabinet_card(index: int) -> None:
                 value=bool(cabinet.get("colgado", False)),
                 key=f"mueble_abierto_colgado_{index}",
             )
+            acabado_previo = str(cabinet.get("acabado", "")).strip()
+            if acabado_previo in lista_acabados:
+                acabado_default_index = lista_acabados.index(acabado_previo)
+            else:
+                acabado_default_index = 0 if lista_acabados else None
+
+            acabado = st.selectbox(
+                "Acabado",
+                options=lista_acabados,
+                index=acabado_default_index,
+                key=f"mueble_abierto_acabado_{index}",
+                disabled=not lista_acabados,
+            ) if lista_acabados else ""
 
             if st.button("Aceptar", key=f"mueble_abierto_aceptar_{index}", use_container_width=True):
                 svg = generar_svg_mueble_abierto(
@@ -1121,6 +1170,7 @@ def _render_open_cabinet_card(index: int) -> None:
                     "num_baldas": num_baldas,
                     "colgado": colgado,
                     "zocalo_mm": zocalo_mm,
+                    "acabado": acabado,
                     "aceptado": True,
                     "svg": svg,
                 }
@@ -1132,6 +1182,27 @@ def _render_open_cabinet_card(index: int) -> None:
                 unsafe_allow_html=True,
             )
             st.caption(_build_open_cabinet_description(cabinet))
+
+            acabado = str(cabinet.get("acabado", "")).strip()
+            color_hex = "#FFFFFF"
+            if acabado:
+                fila = df_acabados[df_acabados["Color CUBRO"].astype(str).str.strip() == acabado]
+                if not fila.empty:
+                    color_hex = str(fila.iloc[0]["HEX"]).strip() or "#FFFFFF"
+
+            st.markdown(
+                f"""
+                <div style="
+                    width:28px;
+                    height:28px;
+                    background:{color_hex};
+                    border-radius:4px;
+                    border:1px solid #888;
+                    margin-top:6px;
+                "></div>
+                """,
+                unsafe_allow_html=True,
+            )
 
             if st.button("Editar", key=f"mueble_abierto_editar_{index}", use_container_width=True):
                 st.session_state["muebles_abiertos"][index]["aceptado"] = False
