@@ -1063,30 +1063,62 @@ def _render_open_cabinet_card(index: int) -> None:
             """
             <style>
               [class*="st-key-mueble_card_"] {
-                background-color: #fbfcff;
-                border-radius: 12px;
-                padding: 0.2rem;
-                margin: 0 auto 0.25rem auto;
-                width: 200px;
-                max-width: 200px;
-                min-height: 215px;
+                background-color: #f6f8fc;
+                border-radius: 10px;
+                padding: 0.1rem 0.28rem;
+                margin: 0 auto 0.08rem auto;
+                width: 172px;
+                max-width: 172px;
+              }
+              [class*="st-key-mueble_card_"] [data-testid="stMarkdownContainer"] p {
+                margin-bottom: 0.2rem;
               }
               [class*="st-key-mueble_card_"] .open-cabinet-preview {
-                width: 155px;
-                height: 95px;
-                margin: 4px auto;
+                width: 132px;
+                height: 72px;
+                margin: 2px auto 4px auto;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 overflow: hidden;
-                border: 1px solid #e7ebf2;
-                border-radius: 8px;
+                border: 1px solid #dde4ef;
+                border-radius: 7px;
                 background: #ffffff;
               }
               [class*="st-key-mueble_card_"] .open-cabinet-preview svg {
                 width: 100%;
                 height: 100%;
                 object-fit: contain;
+              }
+              [class*="st-key-mueble_card_"] [data-testid="stVerticalBlock"] {
+                gap: 0.24rem;
+              }
+              [class*="st-key-mueble_card_"] [data-testid="stCaptionContainer"] {
+                margin-top: 0;
+                margin-bottom: 0;
+                line-height: 1.15;
+                font-size: 0.72rem;
+              }
+              [class*="st-key-mueble_card_"] [data-testid="stNumberInput"] label,
+              [class*="st-key-mueble_card_"] [data-testid="stCheckbox"] label,
+              [class*="st-key-mueble_card_"] [data-testid="stSelectbox"] label {
+                font-size: 0.73rem;
+                margin-bottom: 0.08rem;
+              }
+              [class*="st-key-mueble_card_"] [data-baseweb="input"] input {
+                min-height: 1.85rem;
+                padding-top: 0.1rem;
+                padding-bottom: 0.1rem;
+                font-size: 0.82rem;
+              }
+              [class*="st-key-mueble_card_"] [data-baseweb="select"] > div {
+                min-height: 1.85rem;
+                font-size: 0.82rem;
+              }
+              [class*="st-key-mueble_card_"] [data-testid="stButton"] button {
+                min-height: 1.95rem;
+                padding-top: 0.18rem;
+                padding-bottom: 0.18rem;
               }
             </style>
             """,
@@ -1250,7 +1282,7 @@ def _render_open_cabinet_card(index: int) -> None:
                 unsafe_allow_html=True,
             )
 
-            st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='height:3px;'></div>", unsafe_allow_html=True)
 
             if st.button("Editar", key=f"mueble_abierto_editar_{index}", use_container_width=True):
                 st.session_state["muebles_abiertos"][index]["aceptado"] = False
@@ -1300,13 +1332,29 @@ def render_open_cabinet_generator_section() -> None:
 
     _sync_open_cabinets_count(cantidad_muebles_abiertos)
 
+    st.markdown(
+        """
+        <style>
+          [class*="st-key-open_cabinet_cards_grid"] [data-testid="column"] {
+            padding-left: 0.12rem;
+            padding-right: 0.12rem;
+          }
+          [class*="st-key-open_cabinet_cards_grid"] [data-testid="stVerticalBlock"] {
+            gap: 0.16rem;
+          }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     cards_per_row = 5
-    for row_start in range(0, cantidad_muebles_abiertos, cards_per_row):
-        row_indexes = range(row_start, min(row_start + cards_per_row, cantidad_muebles_abiertos))
-        row_columns = st.columns(cards_per_row, gap="small")
-        for col_position, card_index in enumerate(row_indexes):
-            with row_columns[col_position]:
-                _render_open_cabinet_card(card_index)
+    with st.container(key="open_cabinet_cards_grid"):
+        for row_start in range(0, cantidad_muebles_abiertos, cards_per_row):
+            row_indexes = range(row_start, min(row_start + cards_per_row, cantidad_muebles_abiertos))
+            row_columns = st.columns(cards_per_row, gap="small")
+            for col_position, card_index in enumerate(row_indexes):
+                with row_columns[col_position]:
+                    _render_open_cabinet_card(card_index)
 
 
 TIP_RULES = {
