@@ -3,6 +3,7 @@ import hashlib
 import html
 import math
 import re
+import urllib.parse
 from io import BytesIO, StringIO
 from pathlib import Path
 
@@ -782,6 +783,264 @@ def parse_numeric_dimension(value: object) -> float | None:
         return float(match.group(0))
     except ValueError:
         return None
+
+
+def _project_point(x: float, y: float, dx: float, dy: float, to_back: bool = False) -> tuple[float, float]:
+    """Proyecta un punto al plano trasero usando un desplazamiento de perspectiva."""
+    if not to_back:
+        return x, y
+    return x + dx, y + dy
+
+
+def generate_open_cabinet_svg(
+    ancho_mm: int,
+    alto_mm: int,
+    fondo_mm: int,
+    num_baldas: int,
+    colgado: bool,
+    zocalo_mm: int,
+) -> str:
+    """Genera un SVG paramétrico de mueble abierto en perspectiva frontal ligera."""
+    width_px = 300
+    height_px = 240
+    margin = 20
+
+    body_w = width_px - (2 * margin) - 40
+    body_h = height_px - (2 * margin) - 20
+    sx = body_w / max(float(ancho_mm), 1.0)
+    sy = body_h / max(float(alto_mm), 1.0)
+    scale = min(sx, sy)
+
+    ancho_s = ancho_mm * scale
+    alto_s = alto_mm * scale
+    fondo_s = fondo_mm * scale
+    thickness = max(4.0, 18 * scale)
+    depth_dx = max(22.0, min(48.0, fondo_s * 0.23))
+    depth_dy = -depth_dx * 0.42
+
+    x0 = margin + 10
+    ground_y = margin + alto_s + 5
+    top_y = ground_y - alto_s
+    x1 = x0 + ancho_s
+
+    zocalo_s = max(0.0, zocalo_mm * scale)
+    if zocalo_mm > 0:
+        base_bottom = ground_y - zocalo_s
+    else:
+        base_bottom = ground_y
+    base_top = base_bottom - thickness
+
+    top_top = top_y
+    top_bottom = top_y + thickness
+    inner_top = top_bottom
+    inner_bottom = base_top
+
+    shelf_tops: list[float] = []
+    if num_baldas > 0 and inner_bottom > inner_top:
+        gap = (inner_bottom - inner_top) / (num_baldas + 1)
+        for idx in range(num_baldas):
+            center_y = inner_top + ((idx + 1) * gap)
+            shelf_tops.append(center_y - (thickness / 2))
+
+    def line(xa: float, ya: float, xb: float, yb: float, back_a: bool = False, back_b: bool = False) -> str:
+        pa = _project_point(xa, ya, depth_dx, depth_dy, back_a)
+        pb = _project_point(xb, yb, depth_dx, depth_dy, back_b)
+        return f"<line x1='{pa[0]:.2f}' y1='{pa[1]:.2f}' x2='{pb[0]:.2f}' y2='{pb[1]:.2f}' />"
+
+    parts: list[str] = [
+        f"<svg xmlns='http://www.w3.org/2000/svg' width='{width_px}' height='{height_px}' viewBox='0 0 {width_px} {height_px}'>",
+        "<rect width='100%' height='100%' fill='white' />",
+        "<g stroke='#2e2e2e' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'>",
+    ]
+
+    # Contorno principal visible (frontal + perspectiva trasera visible).
+    parts.extend(
+        [
+            line(x0, top_top, x1, top_top),
+            line(x0, top_top, x0, base_bottom),
+            line(x1, top_top, x1, base_bottom),
+            line(x0, base_bottom, x1, base_bottom),
+            line(x0, top_top, x0, top_top, False, True),
+            line(x1, top_top, x1, top_top, False, True),
+            line(x1, base_bottom, x1, base_bottom, False, True),
+            line(x0, top_top, x1, top_top, True, True),
+            line(x1, top_top, x1, base_bottom, True, True),
+        ]
+    )
+
+    # Tapa y base con espesor.
+    parts.extend(
+        [
+            line(x0, top_bottom, x1, top_bottom),
+            line(x1, top_bottom, x1, top_bottom, False, True),
+            line(x0, base_top, x1, base_top),
+            line(x1, base_top, x1, base_top, False, True),
+        ]
+    )
+
+    # Arista trasera derecha del lateral izquierdo segmentada para no cruzar baldas/tapa/base.
+    rear_left_x, rear_left_top = _project_point(x0, top_bottom, depth_dx, depth_dy, True)
+    _, rear_left_bottom = _project_point(x0, base_top, depth_dx, depth_dy, True)
+    cursor = rear_left_top
+    for shelf_top in shelf_tops:
+        shelf_back_top = _project_point(x0, shelf_top, depth_dx, depth_dy, True)[1]
+        shelf_back_bottom = _project_point(x0, shelf_top + thickness, depth_dx, depth_dy, True)[1]
+        if shelf_back_top > cursor:
+            parts.append(f"<line x1='{rear_left_x:.2f}' y1='{cursor:.2f}' x2='{rear_left_x:.2f}' y2='{shelf_back_top:.2f}' />")
+        cursor = shelf_back_bottom
+    if rear_left_bottom > cursor:
+        parts.append(f"<line x1='{rear_left_x:.2f}' y1='{cursor:.2f}' x2='{rear_left_x:.2f}' y2='{rear_left_bottom:.2f}' />")
+
+    # Balda(s) equidistantes entre tapa y base.
+    for shelf_top in shelf_tops:
+        shelf_bottom = shelf_top + thickness
+        parts.extend(
+            [
+                line(x0, shelf_top, x1, shelf_top),
+                line(x1, shelf_top, x1, shelf_top, False, True),
+                line(x0, shelf_bottom, x1, shelf_bottom),
+                line(x1, shelf_bottom, x1, shelf_bottom, False, True),
+                line(x1, shelf_top, x1, shelf_bottom),
+            ]
+        )
+
+    # Trasera interior.
+    back_left = x0 + thickness
+    back_right = x1 - thickness
+    parts.extend(
+        [
+            line(back_left, inner_top, back_right, inner_top, True, True),
+            line(back_left, inner_bottom, back_right, inner_bottom, True, True),
+            line(back_right, inner_top, back_right, inner_bottom, True, True),
+        ]
+    )
+
+    # Zócalo opcional (solo cara frontal visible).
+    if zocalo_mm > 0:
+        visible_zocalo = max(0.0, (zocalo_mm - 5) * scale)
+        z_front_x = x0 + max(12.0, 100 * scale * 0.45)
+        z_top = base_bottom
+        z_bottom = min(ground_y, z_top + visible_zocalo)
+        z_right = x1
+        parts.extend(
+            [
+                line(z_front_x, z_top, z_right, z_top),
+                line(z_front_x, z_top, z_front_x, z_bottom),
+                line(z_front_x, z_bottom, z_right, z_bottom),
+            ]
+        )
+
+    # Agujeros de colgar en trasera real (Ø17mm).
+    if colgado:
+        hole_radius = max(1.6, (17 * scale) / 2)
+        hole_y = inner_top + (75 * scale)
+        left_hole_x = back_left + (16.5 * scale)
+        right_hole_x = back_right - (16.5 * scale)
+
+        for hole_x in [left_hole_x, right_hole_x]:
+            hx, hy = _project_point(hole_x, hole_y, depth_dx, depth_dy, True)
+            if hx >= x0 and hy >= top_top:
+                parts.append(f"<circle cx='{hx:.2f}' cy='{hy:.2f}' r='{hole_radius:.2f}' />")
+
+    parts.append("</g></svg>")
+    return "".join(parts)
+
+
+def build_open_cabinet_description(cabinet: dict[str, object]) -> str:
+    """Construye descripción textual de mueble abierto."""
+    colgado_text = "colgado" if cabinet["colgado"] else "no colgado"
+    return (
+        f"Mueble abierto {cabinet['ancho_mm']} x {cabinet['alto_mm']} x {cabinet['fondo_mm']} mm, "
+        f"{cabinet['num_baldas']} baldas, {colgado_text}, rodapié {cabinet['zocalo_mm']} mm"
+    )
+
+
+def render_open_cabinets_section() -> None:
+    """Renderiza sección para alta y previsualización de muebles abiertos."""
+    if "open_cabinets_visible" not in st.session_state:
+        st.session_state["open_cabinets_visible"] = False
+    if "open_cabinets_saved" not in st.session_state:
+        st.session_state["open_cabinets_saved"] = {}
+
+    if st.button("Añadir muebles abiertos", use_container_width=True):
+        st.session_state["open_cabinets_visible"] = True
+
+    if not st.session_state["open_cabinets_visible"]:
+        return
+
+    st.markdown("### Configuración de muebles abiertos")
+    count = st.number_input("Número de muebles abiertos", min_value=1, max_value=12, value=1, step=1)
+
+    for i in range(int(count)):
+        saved_data = st.session_state["open_cabinets_saved"].get(i, {})
+        with st.container(border=True):
+            st.markdown(f"**Mueble abierto {i + 1}**")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                ancho_mm = st.number_input(
+                    "ancho en mm",
+                    min_value=100,
+                    value=int(saved_data.get("ancho_mm", 600)),
+                    key=f"open_ancho_{i}",
+                )
+                fondo_mm = st.number_input(
+                    "fondo en mm",
+                    min_value=100,
+                    value=int(saved_data.get("fondo_mm", 396)),
+                    key=f"open_fondo_{i}",
+                )
+            with col2:
+                alto_mm = st.number_input(
+                    "alto en mm",
+                    min_value=200,
+                    value=int(saved_data.get("alto_mm", 800)),
+                    key=f"open_alto_{i}",
+                )
+                num_baldas = st.number_input(
+                    "cantidad de baldas",
+                    min_value=0,
+                    max_value=12,
+                    value=int(saved_data.get("num_baldas", 3)),
+                    key=f"open_baldas_{i}",
+                )
+            with col3:
+                colgado = st.checkbox(
+                    "lleva herrajes de colgar",
+                    value=bool(saved_data.get("colgado", False)),
+                    key=f"open_colgado_{i}",
+                )
+                zocalo_mm = st.number_input(
+                    "altura del rodapié en mm",
+                    min_value=0,
+                    value=int(saved_data.get("zocalo_mm", 0)),
+                    key=f"open_zocalo_{i}",
+                )
+
+            if st.button("Aceptar", key=f"accept_open_{i}"):
+                cabinet_data = {
+                    "ancho_mm": int(ancho_mm),
+                    "alto_mm": int(alto_mm),
+                    "fondo_mm": int(fondo_mm),
+                    "num_baldas": int(num_baldas),
+                    "colgado": bool(colgado),
+                    "zocalo_mm": int(zocalo_mm),
+                }
+                cabinet_data["svg"] = generate_open_cabinet_svg(**cabinet_data)
+                cabinet_data["description"] = build_open_cabinet_description(cabinet_data)
+                st.session_state["open_cabinets_saved"][i] = cabinet_data
+                st.rerun()
+
+            accepted = st.session_state["open_cabinets_saved"].get(i)
+            if accepted:
+                preview_col, desc_col = st.columns([1, 1.3])
+                with preview_col:
+                    encoded_svg = urllib.parse.quote(accepted["svg"])
+                    st.markdown(
+                        f"<img src='data:image/svg+xml;utf8,{encoded_svg}' style='width: 240px; height: auto; border: 1px solid #ddd; border-radius: 6px;'/>",
+                        unsafe_allow_html=True,
+                    )
+                with desc_col:
+                    st.markdown(accepted["description"])
 
 
 TIP_RULES = {
@@ -2163,6 +2422,7 @@ else:
                     "Cuidado: Es posible que haya menos rodapiés de los necesarios en el despiece "
                     f"(REFERENCIA: {subtitulo} | Rodapiés: {lenz_mm} mm | Longitud de módulos: {leny_mm} mm)."
                 )
+            render_open_cabinets_section()
             if can_download:
                 st.download_button(
                     label="Descargar despiece",
