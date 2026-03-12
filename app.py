@@ -1065,16 +1065,16 @@ def _render_open_cabinet_card(index: int) -> None:
               [class*="st-key-mueble_card_"] {
                 background-color: #fbfcff;
                 border-radius: 12px;
-                padding: 0.35rem;
-                margin: 0 auto 0.5rem auto;
-                width: 270px;
-                max-width: 270px;
-                min-height: 430px;
+                padding: 0.2rem;
+                margin: 0 auto 0.25rem auto;
+                width: 200px;
+                max-width: 200px;
+                min-height: 215px;
               }
               [class*="st-key-mueble_card_"] .open-cabinet-preview {
-                width: 200px;
-                height: 160px;
-                margin: 8px auto;
+                width: 155px;
+                height: 95px;
+                margin: 4px auto;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -1300,7 +1300,7 @@ def render_open_cabinet_generator_section() -> None:
 
     _sync_open_cabinets_count(cantidad_muebles_abiertos)
 
-    cards_per_row = 4
+    cards_per_row = 5
     for row_start in range(0, cantidad_muebles_abiertos, cards_per_row):
         row_indexes = range(row_start, min(row_start + cards_per_row, cantidad_muebles_abiertos))
         row_columns = st.columns(cards_per_row, gap="small")
