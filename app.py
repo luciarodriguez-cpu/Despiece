@@ -359,6 +359,74 @@ def find_column_name(columns: pd.Index, target_name: str) -> str | None:
     return None
 
 
+def detect_u_shape(final_df: pd.DataFrame) -> bool:
+    """Detecta U-Shape en Tirador ignorando mayúsculas/minúsculas y espacios."""
+    tirador_column = find_column_name(final_df.columns, "Tirador")
+    if tirador_column is None:
+        return False
+
+    normalized_tirador = (
+        final_df[tirador_column]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .str.replace(r"\s+", "", regex=True)
+    )
+    return normalized_tirador.eq("u-shape").any()
+
+
+def get_tl_candidates_mask(final_df: pd.DataFrame) -> pd.Series:
+    """Devuelve máscara booleana de candidatas con Tipología/Tipologia que empieza por T o L."""
+    tipologia_column = find_column_name(final_df.columns, "Tipología") or find_column_name(final_df.columns, "Tipologia")
+    if tipologia_column is None:
+        return pd.Series(False, index=final_df.index)
+
+    tip_series = final_df[tipologia_column].fillna("").astype(str).str.strip().str.upper()
+    return tip_series.str.startswith(("T", "L"))
+
+
+def build_u22_row_keys(final_df: pd.DataFrame) -> pd.Series:
+    """Construye una clave estable por fila para selección manual de 22mm."""
+    name_column = find_column_name(final_df.columns, "Name")
+    order_column = find_column_name(final_df.columns, "Orden CSV")
+
+    name_values = final_df[name_column] if name_column is not None else pd.Series("", index=final_df.index)
+    order_values = final_df[order_column] if order_column is not None else pd.Series("", index=final_df.index)
+
+    return pd.Series(
+        [
+            f"{row_index}|{'' if pd.isna(name_value) else str(name_value).strip()}|"
+            f"{'' if pd.isna(order_value) else str(order_value).strip()}"
+            for row_index, name_value, order_value in zip(final_df.index, name_values, order_values)
+        ],
+        index=final_df.index,
+    )
+
+
+def append_22mm_to_observaciones(df: pd.DataFrame, mask_22mm: pd.Series) -> pd.DataFrame:
+    """Añade 22mm en Observaciones sin duplicados y con separador ' | '."""
+    updated_df = df.copy()
+    if "Observaciones" not in updated_df.columns:
+        updated_df["Observaciones"] = ""
+
+    mask_aligned = mask_22mm.reindex(updated_df.index, fill_value=False).astype(bool)
+    if not mask_aligned.any():
+        return updated_df
+
+    current_obs = updated_df.loc[mask_aligned, "Observaciones"].fillna("").astype(str).str.strip()
+    has_22mm = current_obs.str.contains(r"\b22mm\b", case=False, regex=True)
+
+    to_append_mask = mask_aligned.copy()
+    to_append_mask.loc[mask_aligned] = ~has_22mm.values
+    if not to_append_mask.any():
+        return updated_df
+
+    obs_to_update = updated_df.loc[to_append_mask, "Observaciones"].fillna("").astype(str).str.strip()
+    updated_df.loc[to_append_mask, "Observaciones"] = obs_to_update.where(obs_to_update == "", obs_to_update + " | ") + "22mm"
+    return updated_df
+
+
 def natural_sort_key(value: object) -> tuple[object, ...]:
     """Genera clave alfanumérica natural: M2 < M10, C2 < C10."""
     text = "" if pd.isna(value) else str(value).strip()
@@ -1861,6 +1929,8 @@ if not uploaded_files:
     st.session_state.pop("final_df_candidate", None)
     st.session_state.pop("corrections_applied", None)
     st.session_state.pop("post_issues_df", None)
+    st.session_state.pop("u22_mode", None)
+    st.session_state.pop("u22_selected_keys", None)
     for state_key in list(st.session_state.keys()):
         if str(state_key).startswith("name_review_editor_"):
             st.session_state.pop(state_key, None)
@@ -1886,6 +1956,8 @@ else:
         st.session_state.pop("final_df_confirmed", None)
         st.session_state.pop("final_df_candidate", None)
         st.session_state.pop("corrections_applied", None)
+        st.session_state.pop("u22_mode", None)
+        st.session_state.pop("u22_selected_keys", None)
         st.session_state.pop("post_issues_df", None)
         for state_key in list(st.session_state.keys()):
             if str(state_key).startswith("name_review_editor_"):
@@ -1979,9 +2051,85 @@ else:
             st.session_state["name_fixes"] = {}
 
         confirmed_df = st.session_state.get("final_df_confirmed", final_df).copy()
-        display_df = confirmed_df
+
+        has_u_shape = detect_u_shape(confirmed_df)
+        tl_candidates_mask = get_tl_candidates_mask(confirmed_df)
+        row_keys = build_u22_row_keys(confirmed_df)
+
+        if has_u_shape:
+            if "u22_mode" not in st.session_state:
+                st.session_state["u22_mode"] = "pending"
+            if "u22_selected_keys" not in st.session_state:
+                st.session_state["u22_selected_keys"] = []
+
+            st.markdown("### Marcado rápido 22mm (U-Shape detectado)")
+            quick_col_all, quick_col_none, quick_col_manual = st.columns(3)
+
+            if quick_col_all.button("Marcar TODO T/L como 22mm", use_container_width=True):
+                st.session_state["u22_mode"] = "all"
+                st.session_state["u22_selected_keys"] = []
+                st.rerun()
+
+            if quick_col_none.button("Marcar NINGUNO como 22mm", use_container_width=True):
+                st.session_state["u22_mode"] = "none"
+                st.session_state["u22_selected_keys"] = []
+                st.rerun()
+
+            if quick_col_manual.button("Revisar manual", use_container_width=True):
+                st.session_state["u22_mode"] = "manual"
+
+            if st.session_state.get("u22_mode") == "manual":
+                candidate_rows = confirmed_df.loc[tl_candidates_mask].copy()
+                candidate_rows["__u22_key"] = row_keys.loc[tl_candidates_mask].values
+
+                previous_selected = set(st.session_state.get("u22_selected_keys", []))
+                candidate_rows["22mm"] = candidate_rows["__u22_key"].isin(previous_selected)
+
+                name_column = find_column_name(candidate_rows.columns, "Name")
+                tipologia_column = find_column_name(candidate_rows.columns, "Tipología") or find_column_name(
+                    candidate_rows.columns, "Tipologia"
+                )
+
+                visible_columns = [col for col in [name_column, tipologia_column, "Orden CSV", "Observaciones"] if col in candidate_rows.columns]
+                manual_editor_columns = ["22mm"] + visible_columns
+
+                st.caption("Selecciona qué piezas T/L deben marcarse como 22mm y confirma.")
+                manual_edited = st.data_editor(
+                    candidate_rows[manual_editor_columns + ["__u22_key"]],
+                    width="stretch",
+                    hide_index=False,
+                    num_rows="fixed",
+                    disabled=[col for col in manual_editor_columns if col != "22mm"] + ["__u22_key"],
+                    column_config={
+                        "22mm": st.column_config.CheckboxColumn(
+                            "22mm",
+                            help="Marca las filas que deben añadir 22mm en Observaciones.",
+                        ),
+                    },
+                    key="u22_manual_editor",
+                )
+
+                if st.button("Confirmar 22mm", type="primary"):
+                    selected_keys = manual_edited.loc[manual_edited["22mm"], "__u22_key"].astype(str).tolist()
+                    st.session_state["u22_selected_keys"] = selected_keys
+                    st.session_state["u22_mode"] = "manual_confirmed"
+                    st.rerun()
+
+        u22_mode = st.session_state.get("u22_mode", "none") if has_u_shape else "none"
+        mask_22mm = pd.Series(False, index=confirmed_df.index)
+
+        if has_u_shape and u22_mode == "all":
+            mask_22mm = tl_candidates_mask
+        elif has_u_shape and u22_mode == "manual_confirmed":
+            selected_keys = set(st.session_state.get("u22_selected_keys", []))
+            mask_22mm = row_keys.isin(selected_keys) & tl_candidates_mask
+
+        final_with_22mm = confirmed_df.copy()
+        if has_u_shape and u22_mode not in {"none", "pending", "manual"}:
+            final_with_22mm = append_22mm_to_observaciones(final_with_22mm, mask_22mm)
+
         display_df = render_sectioned_observaciones_editor(
-            display_df,
+            final_with_22mm,
             source_subtitles,
             "resultado_observaciones_editor",
         )
@@ -1992,6 +2140,8 @@ else:
         review_df = candidate_df if candidate_df is not None else confirmed_df
         issues_df = detect_name_issues(review_df)
         confirmed_issues_df = detect_name_issues(confirmed_df)
+
+        can_download = (not has_u_shape) or (u22_mode not in {"pending", "manual"})
 
         if confirmed_issues_df.empty:
             st.success("Names OK. Puedes descargar el CSV.")
@@ -2013,12 +2163,15 @@ else:
                     "Cuidado: Es posible que haya menos rodapiés de los necesarios en el despiece "
                     f"(REFERENCIA: {subtitulo} | Rodapiés: {lenz_mm} mm | Longitud de módulos: {leny_mm} mm)."
                 )
-            st.download_button(
-                label="Descargar despiece",
-                data=BytesIO(csv_output),
-                file_name="resultado_transformado.csv",
-                mime="text/csv",
-            )
+            if can_download:
+                st.download_button(
+                    label="Descargar despiece",
+                    data=BytesIO(csv_output),
+                    file_name="resultado_transformado.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.warning("Debes elegir cómo aplicar 22mm para piezas T/L antes de poder descargar.")
             st.session_state.pop("final_df_candidate", None)
             st.session_state.pop("post_issues_df", None)
         else:
