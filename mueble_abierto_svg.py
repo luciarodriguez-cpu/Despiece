@@ -3,6 +3,8 @@ from __future__ import annotations
 
 # Línea 3
 from dataclasses import dataclass
+import re
+from uuid import uuid4
 
 
 # Línea 6
@@ -15,6 +17,7 @@ class MuebleAbiertoInput:
     colgado: bool
     zocalo_mm: float
     espesor_mm: float = 19.0
+    color_hex: str = "#FFFFFF"
 
 
 # Línea 16
@@ -26,6 +29,7 @@ def generar_svg_mueble_abierto(
     colgado: bool,
     zocalo_mm: float,
     espesor_mm: float = 19.0,
+    color_hex: str = "#FFFFFF",
 ) -> str:
     """
     Genera el SVG paramétrico de un mueble abierto siguiendo las reglas
@@ -50,6 +54,13 @@ def generar_svg_mueble_abierto(
         zocalo_mm=zocalo_mm,
         espesor_mm=espesor_mm,
     )
+
+    color_relleno = _normalizar_hex(color_hex)
+    color_linea = _color_contraste(color_relleno)
+    uid = uuid4().hex[:8]
+    clase_relleno = f"f_{uid}"
+    clase_linea = f"s_{uid}"
+    clase_agujero = f"h_{uid}"
 
     # =========================================================
     # Línea 45
@@ -248,18 +259,165 @@ def generar_svg_mueble_abierto(
     # =========================================================
 
     # Línea 211
-    elementos: list[str] = []
+    rellenos: list[str] = []
+    lineas: list[str] = []
+    agujeros: list[str] = []
 
     # Línea 213
-    def add_line(x1: float, y1: float, x2: float, y2: float, clase: str = "s") -> None:
-        elementos.append(
+    def add_line(x1: float, y1: float, x2: float, y2: float, clase: str | None = None) -> None:
+        if clase is None:
+            clase = clase_linea
+        lineas.append(
             f'<line class="{clase}" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"/>'
         )
 
     # Línea 218
-    def add_ellipse(cx: float, cy: float, rx: float, ry: float, clase: str = "s") -> None:
-        elementos.append(
+    def add_polygon(puntos: list[tuple[float, float]], clase: str | None = None) -> None:
+        if clase is None:
+            clase = clase_relleno
+        p = " ".join(f"{x:.1f},{y:.1f}" for x, y in puntos)
+        rellenos.append(f'<polygon class="{clase}" points="{p}"/>')
+
+    # Línea 221
+    def add_ellipse(cx: float, cy: float, rx: float, ry: float, clase: str | None = None) -> None:
+        if clase is None:
+            clase = clase_linea
+        agujeros.append(
             f'<ellipse class="{clase}" cx="{cx:.1f}" cy="{cy:.1f}" rx="{rx:.1f}" ry="{ry:.1f}"/>'
+        )
+
+    # =========================================================
+    # RELLENOS
+    # =========================================================
+
+    # Tapa (cara superior)
+    add_polygon(
+        [
+            (x_front_left, y_tapa_top_front),
+            (x_front_right, y_tapa_top_front),
+            (x_back_right, y_tapa_top_back),
+            (x_back_left, y_tapa_top_back),
+        ]
+    )
+
+    # Tapa (caras de espesor visibles)
+    add_polygon(
+        [
+            (x_front_left, y_tapa_top_front),
+            (x_inner_left_front, y_tapa_top_front),
+            (x_inner_left_front, y_tapa_bottom_front),
+            (x_front_left, y_tapa_bottom_front),
+        ]
+    )
+    add_polygon(
+        [
+            (x_inner_left_front, y_tapa_top_front),
+            (x_back_left, y_tapa_top_back),
+            (x_inner_back_left, y_tapa_top_back),
+            (x_inner_left_front, y_tapa_bottom_front),
+        ]
+    )
+    add_polygon(
+        [
+            (x_inner_right_front, y_tapa_top_front),
+            (x_front_right, y_tapa_top_front),
+            (x_front_right, y_tapa_bottom_front),
+            (x_inner_right_front, y_tapa_bottom_front),
+        ]
+    )
+    add_polygon(
+        [
+            (x_inner_right_front, y_tapa_top_front),
+            (x_front_right, y_tapa_top_front),
+            (x_back_right, y_tapa_top_back),
+            (x_back_right - espesor_px_x, y_tapa_top_back),
+        ]
+    )
+
+    # Laterales frontales
+    add_polygon(
+        [
+            (x_front_left, y_tapa_top_front),
+            (x_inner_left_front, y_tapa_top_front),
+            (x_inner_left_front, y_suelo),
+            (x_front_left, y_suelo),
+        ]
+    )
+    add_polygon(
+        [
+            (x_inner_right_front, y_tapa_top_front),
+            (x_front_right, y_tapa_top_front),
+            (x_front_right, y_suelo),
+            (x_inner_right_front, y_suelo),
+        ]
+    )
+
+    # Lateral derecho exterior (cara lateral en perspectiva)
+    add_polygon(
+        [
+            (x_front_right, y_tapa_top_front),
+            (x_back_right, y_tapa_top_back),
+            (x_right_side_outer_back, y_suelo - dy_fondo),
+            (x_front_right, y_suelo),
+        ]
+    )
+
+    # Trasera interior visible
+    add_polygon(
+        [
+            (x_trasera_left, y_trasera_top),
+            (x_trasera_right, y_trasera_top),
+            (x_trasera_right, y_trasera_bottom),
+            (x_trasera_left, y_trasera_bottom),
+        ]
+    )
+
+    # Base (cara superior y frontal)
+    add_polygon(
+        [
+            (x_inner_left_front, y_base_top_front),
+            (x_inner_right_front, y_base_top_front),
+            (x_inner_right_front, y_base_top_back),
+            (x_inner_back_left, y_base_top_back),
+        ]
+    )
+    add_polygon(
+        [
+            (x_inner_left_front, y_base_top_front),
+            (x_inner_right_front, y_base_top_front),
+            (x_inner_right_front, y_base_bottom_front),
+            (x_inner_left_front, y_base_bottom_front),
+        ]
+    )
+
+    # Baldas
+    for balda in baldas:
+        add_polygon(
+            [
+                (x_inner_left_front, balda["y_sup_front"]),
+                (x_inner_right_front, balda["y_sup_front"]),
+                (x_inner_right_front, balda["y_sup_back"]),
+                (x_inner_back_left, balda["y_sup_back"]),
+            ]
+        )
+        add_polygon(
+            [
+                (x_inner_left_front, balda["y_sup_front"]),
+                (x_inner_right_front, balda["y_sup_front"]),
+                (x_inner_right_front, balda["y_inf_front"]),
+                (x_inner_left_front, balda["y_inf_front"]),
+            ]
+        )
+
+    # Zócalo
+    if zocalo is not None:
+        add_polygon(
+            [
+                (zocalo["x_left"], zocalo["y_left_top_visible"]),
+                (zocalo["x_left"], zocalo["y_left_bottom"]),
+                (zocalo["x_right"], zocalo["y_right_bottom"]),
+                (zocalo["x_right"], zocalo["y_right_top_visible"]),
+            ]
         )
 
     # =========================================================
@@ -423,7 +581,7 @@ def generar_svg_mueble_abierto(
         cx_izq = x_trasera_left + offset_lateral_mm * px_por_mm_x
         cy = y_trasera_top + offset_superior_mm * px_por_mm_y
 
-        add_ellipse(cx_izq, cy, radio_x, radio_y)
+        add_ellipse(cx_izq, cy, radio_x, radio_y, clase=clase_agujero)
 
         # Línea 371
         # El agujero derecho solo si visualmente se ve.
@@ -449,9 +607,13 @@ def generar_svg_mueble_abierto(
     svg = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{min_x:.1f} {min_y:.1f} {view_w:.1f} {view_h:.1f}">',
         "<style>",
-        ".s{stroke:#000;stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round;}",
+        f'.{clase_relleno}{{fill:{color_relleno};stroke:none;}}',
+        f'.{clase_linea}{{stroke:{color_linea};stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round;}}',
+        f'.{clase_agujero}{{fill:#FFFFFF;stroke:{color_linea};stroke-width:2.0;}}',
         "</style>",
-        *elementos,
+        *rellenos,
+        *lineas,
+        *agujeros,
         "</svg>",
     ]
 
@@ -480,3 +642,19 @@ def _validar_inputs(
         raise ValueError("zocalo_mm no puede ser negativo.")
     if espesor_mm <= 0:
         raise ValueError("espesor_mm debe ser mayor que 0.")
+
+
+def _normalizar_hex(color_hex: str) -> str:
+    valor = str(color_hex).strip()
+    if re.fullmatch(r"#([0-9a-fA-F]{6})", valor):
+        return valor.upper()
+    return "#FFFFFF"
+
+
+def _color_contraste(hex_color: str) -> str:
+    color = _normalizar_hex(hex_color)
+    r = int(color[1:3], 16)
+    g = int(color[3:5], 16)
+    b = int(color[5:7], 16)
+    luminancia = (0.299 * r) + (0.587 * g) + (0.114 * b)
+    return "#111111" if luminancia >= 150 else "#F5F5F5"
