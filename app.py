@@ -979,6 +979,10 @@ def _sync_open_cabinets_count(target_count: int) -> None:
     if len(cabinets) > target_count:
         del cabinets[target_count:]
 
+        if st.button("Editar", key=f"mueble_abierto_editar_{index}", use_container_width=True):
+            st.session_state["muebles_abiertos"][index]["aceptado"] = False
+            st.session_state["muebles_abiertos"][index]["svg"] = ""
+            st.rerun()
 
 def _build_open_cabinet_description(cabinet: dict[str, object]) -> str:
     """Construye descripción textual del mueble abierto con pluralización."""
@@ -995,105 +999,112 @@ def _render_open_cabinet_card(index: int) -> None:
     """Renderiza una tarjeta individual de mueble abierto con modo editar/aceptado."""
     cabinet = st.session_state["muebles_abiertos"][index]
 
-    st.markdown(
-        """
-        <div style='border:1px solid #dfe3eb; border-radius:12px; padding:14px; background-color:#fbfcff; min-height:430px;'>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown(f"**Mueble abierto {index + 1}**")
-
-    if not cabinet.get("aceptado", False):
-        ancho_mm = int(
-            st.number_input(
-                "ancho en mm",
-                min_value=0,
-                max_value=5000,
-                step=1,
-                value=int(cabinet.get("ancho_mm", 600)),
-                key=f"mueble_abierto_ancho_{index}",
-            )
-        )
-        alto_mm = int(
-            st.number_input(
-                "alto en mm",
-                min_value=0,
-                max_value=5000,
-                step=1,
-                value=int(cabinet.get("alto_mm", 800)),
-                key=f"mueble_abierto_alto_{index}",
-            )
-        )
-        fondo_mm = int(
-            st.number_input(
-                "fondo en mm",
-                min_value=0,
-                max_value=5000,
-                step=1,
-                value=int(cabinet.get("fondo_mm", 396)),
-                key=f"mueble_abierto_fondo_{index}",
-            )
-        )
-        num_baldas = int(
-            st.number_input(
-                "número de baldas",
-                min_value=0,
-                max_value=20,
-                step=1,
-                value=int(cabinet.get("num_baldas", 1)),
-                key=f"mueble_abierto_baldas_{index}",
-            )
-        )
-        zocalo_mm = int(
-            st.number_input(
-                "altura de rodapié en mm",
-                min_value=0,
-                max_value=500,
-                step=1,
-                value=int(cabinet.get("zocalo_mm", 0)),
-                key=f"mueble_abierto_zocalo_{index}",
-            )
-        )
-        colgado = st.checkbox(
-            "Lleva herrajes de colgar",
-            value=bool(cabinet.get("colgado", False)),
-            key=f"mueble_abierto_colgado_{index}",
-        )
-
-        if st.button("Aceptar", key=f"mueble_abierto_aceptar_{index}", use_container_width=True):
-            svg = generar_svg_mueble_abierto(
-                ancho_mm=ancho_mm,
-                alto_mm=alto_mm,
-                fondo_mm=fondo_mm,
-                num_baldas=num_baldas,
-                colgado=colgado,
-                zocalo_mm=zocalo_mm,
-            )
-            st.session_state["muebles_abiertos"][index] = {
-                "ancho_mm": ancho_mm,
-                "alto_mm": alto_mm,
-                "fondo_mm": fondo_mm,
-                "num_baldas": num_baldas,
-                "colgado": colgado,
-                "zocalo_mm": zocalo_mm,
-                "aceptado": True,
-                "svg": svg,
-            }
-            st.rerun()
-    else:
-        svg = str(cabinet.get("svg", ""))
+    card_key = f"mueble_card_{index}"
+    with st.container(key=card_key, border=True):
         st.markdown(
-            f"<div style='width:220px; margin:8px auto'>{svg}</div>",
+            """
+            <style>
+              [class*="st-key-mueble_card_"] {
+                background-color: #fbfcff;
+                border-radius: 12px;
+                padding: 0.5rem;
+                margin-bottom: 0.5rem;
+              }
+            </style>
+            """,
             unsafe_allow_html=True,
         )
-        st.caption(_build_open_cabinet_description(cabinet))
+        st.markdown(f"**Mueble abierto {index + 1}**")
 
-        if st.button("Editar", key=f"mueble_abierto_editar_{index}", use_container_width=True):
-            st.session_state["muebles_abiertos"][index]["aceptado"] = False
-            st.session_state["muebles_abiertos"][index]["svg"] = ""
-            st.rerun()
+        if not cabinet.get("aceptado", False):
+            ancho_mm = int(
+                st.number_input(
+                    "ancho en mm",
+                    min_value=0,
+                    max_value=5000,
+                    step=1,
+                    value=int(cabinet.get("ancho_mm", 600)),
+                    key=f"mueble_abierto_ancho_{index}",
+                )
+            )
+            alto_mm = int(
+                st.number_input(
+                    "alto en mm",
+                    min_value=0,
+                    max_value=5000,
+                    step=1,
+                    value=int(cabinet.get("alto_mm", 800)),
+                    key=f"mueble_abierto_alto_{index}",
+                )
+            )
+            fondo_mm = int(
+                st.number_input(
+                    "fondo en mm",
+                    min_value=0,
+                    max_value=5000,
+                    step=1,
+                    value=int(cabinet.get("fondo_mm", 396)),
+                    key=f"mueble_abierto_fondo_{index}",
+                )
+            )
+            num_baldas = int(
+                st.number_input(
+                    "número de baldas",
+                    min_value=0,
+                    max_value=20,
+                    step=1,
+                    value=int(cabinet.get("num_baldas", 1)),
+                    key=f"mueble_abierto_baldas_{index}",
+                )
+            )
+            zocalo_mm = int(
+                st.number_input(
+                    "altura de rodapié en mm",
+                    min_value=0,
+                    max_value=500,
+                    step=1,
+                    value=int(cabinet.get("zocalo_mm", 0)),
+                    key=f"mueble_abierto_zocalo_{index}",
+                )
+            )
+            colgado = st.checkbox(
+                "Lleva herrajes de colgar",
+                value=bool(cabinet.get("colgado", False)),
+                key=f"mueble_abierto_colgado_{index}",
+            )
 
-    st.markdown("</div>", unsafe_allow_html=True)
+            if st.button("Aceptar", key=f"mueble_abierto_aceptar_{index}", use_container_width=True):
+                svg = generar_svg_mueble_abierto(
+                    ancho_mm=ancho_mm,
+                    alto_mm=alto_mm,
+                    fondo_mm=fondo_mm,
+                    num_baldas=num_baldas,
+                    colgado=colgado,
+                    zocalo_mm=zocalo_mm,
+                )
+                st.session_state["muebles_abiertos"][index] = {
+                    "ancho_mm": ancho_mm,
+                    "alto_mm": alto_mm,
+                    "fondo_mm": fondo_mm,
+                    "num_baldas": num_baldas,
+                    "colgado": colgado,
+                    "zocalo_mm": zocalo_mm,
+                    "aceptado": True,
+                    "svg": svg,
+                }
+                st.rerun()
+        else:
+            svg = str(cabinet.get("svg", ""))
+            st.markdown(
+                f"<div style='width:220px; margin:8px auto'>{svg}</div>",
+                unsafe_allow_html=True,
+            )
+            st.caption(_build_open_cabinet_description(cabinet))
+
+            if st.button("Editar", key=f"mueble_abierto_editar_{index}", use_container_width=True):
+                st.session_state["muebles_abiertos"][index]["aceptado"] = False
+                st.session_state["muebles_abiertos"][index]["svg"] = ""
+                st.rerun()
 
 
 def render_open_cabinet_generator_section() -> None:
