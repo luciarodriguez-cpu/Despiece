@@ -4,6 +4,7 @@ from __future__ import annotations
 # Línea 3
 from dataclasses import dataclass
 import re
+from uuid import uuid4
 
 
 # Línea 6
@@ -56,6 +57,10 @@ def generar_svg_mueble_abierto(
 
     color_relleno = _normalizar_hex(color_hex)
     color_linea = _color_contraste(color_relleno)
+    uid = uuid4().hex[:8]
+    clase_relleno = f"f_{uid}"
+    clase_linea = f"s_{uid}"
+    clase_agujero = f"h_{uid}"
 
     # =========================================================
     # Línea 45
@@ -259,18 +264,24 @@ def generar_svg_mueble_abierto(
     agujeros: list[str] = []
 
     # Línea 213
-    def add_line(x1: float, y1: float, x2: float, y2: float, clase: str = "s") -> None:
+    def add_line(x1: float, y1: float, x2: float, y2: float, clase: str | None = None) -> None:
+        if clase is None:
+            clase = clase_linea
         lineas.append(
             f'<line class="{clase}" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"/>'
         )
 
     # Línea 218
-    def add_polygon(puntos: list[tuple[float, float]], clase: str = "f") -> None:
+    def add_polygon(puntos: list[tuple[float, float]], clase: str | None = None) -> None:
+        if clase is None:
+            clase = clase_relleno
         p = " ".join(f"{x:.1f},{y:.1f}" for x, y in puntos)
         rellenos.append(f'<polygon class="{clase}" points="{p}"/>')
 
     # Línea 221
-    def add_ellipse(cx: float, cy: float, rx: float, ry: float, clase: str = "s") -> None:
+    def add_ellipse(cx: float, cy: float, rx: float, ry: float, clase: str | None = None) -> None:
+        if clase is None:
+            clase = clase_linea
         agujeros.append(
             f'<ellipse class="{clase}" cx="{cx:.1f}" cy="{cy:.1f}" rx="{rx:.1f}" ry="{ry:.1f}"/>'
         )
@@ -289,6 +300,40 @@ def generar_svg_mueble_abierto(
         ]
     )
 
+    # Tapa (caras de espesor visibles)
+    add_polygon(
+        [
+            (x_front_left, y_tapa_top_front),
+            (x_inner_left_front, y_tapa_top_front),
+            (x_inner_left_front, y_tapa_bottom_front),
+            (x_front_left, y_tapa_bottom_front),
+        ]
+    )
+    add_polygon(
+        [
+            (x_inner_left_front, y_tapa_top_front),
+            (x_back_left, y_tapa_top_back),
+            (x_inner_back_left, y_tapa_top_back),
+            (x_inner_left_front, y_tapa_bottom_front),
+        ]
+    )
+    add_polygon(
+        [
+            (x_inner_right_front, y_tapa_top_front),
+            (x_front_right, y_tapa_top_front),
+            (x_front_right, y_tapa_bottom_front),
+            (x_inner_right_front, y_tapa_bottom_front),
+        ]
+    )
+    add_polygon(
+        [
+            (x_inner_right_front, y_tapa_top_front),
+            (x_front_right, y_tapa_top_front),
+            (x_back_right, y_tapa_top_back),
+            (x_back_right - espesor_px_x, y_tapa_top_back),
+        ]
+    )
+
     # Laterales frontales
     add_polygon(
         [
@@ -304,6 +349,26 @@ def generar_svg_mueble_abierto(
             (x_front_right, y_tapa_top_front),
             (x_front_right, y_suelo),
             (x_inner_right_front, y_suelo),
+        ]
+    )
+
+    # Lateral derecho exterior (cara lateral en perspectiva)
+    add_polygon(
+        [
+            (x_front_right, y_tapa_top_front),
+            (x_back_right, y_tapa_top_back),
+            (x_right_side_outer_back, y_suelo - dy_fondo),
+            (x_front_right, y_suelo),
+        ]
+    )
+
+    # Trasera interior visible
+    add_polygon(
+        [
+            (x_trasera_left, y_trasera_top),
+            (x_trasera_right, y_trasera_top),
+            (x_trasera_right, y_trasera_bottom),
+            (x_trasera_left, y_trasera_bottom),
         ]
     )
 
@@ -516,7 +581,7 @@ def generar_svg_mueble_abierto(
         cx_izq = x_trasera_left + offset_lateral_mm * px_por_mm_x
         cy = y_trasera_top + offset_superior_mm * px_por_mm_y
 
-        add_ellipse(cx_izq, cy, radio_x, radio_y, clase="h")
+        add_ellipse(cx_izq, cy, radio_x, radio_y, clase=clase_agujero)
 
         # Línea 371
         # El agujero derecho solo si visualmente se ve.
@@ -542,9 +607,9 @@ def generar_svg_mueble_abierto(
     svg = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{min_x:.1f} {min_y:.1f} {view_w:.1f} {view_h:.1f}">',
         "<style>",
-        f'.f{{fill:{color_relleno};stroke:none;}}',
-        f'.s{{stroke:{color_linea};stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round;}}',
-        f'.h{{fill:#FFFFFF;stroke:{color_linea};stroke-width:2.0;}}',
+        f'.{clase_relleno}{{fill:{color_relleno};stroke:none;}}',
+        f'.{clase_linea}{{stroke:{color_linea};stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round;}}',
+        f'.{clase_agujero}{{fill:#FFFFFF;stroke:{color_linea};stroke-width:2.0;}}',
         "</style>",
         *rellenos,
         *lineas,
