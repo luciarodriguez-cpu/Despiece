@@ -1190,19 +1190,30 @@ def _render_open_cabinet_card(index: int) -> None:
                 if not fila.empty:
                     color_hex = str(fila.iloc[0]["HEX"]).strip() or "#FFFFFF"
 
+            acabado_label = html.escape(acabado) if acabado else "Sin acabado"
             st.markdown(
                 f"""
                 <div style="
-                    width:28px;
-                    height:28px;
-                    background:{color_hex};
-                    border-radius:4px;
-                    border:1px solid #888;
+                    display:flex;
+                    align-items:center;
+                    gap:8px;
                     margin-top:6px;
-                "></div>
+                ">
+                    <div style="
+                        width:28px;
+                        height:28px;
+                        background:{color_hex};
+                        border-radius:4px;
+                        border:1px solid #888;
+                        flex-shrink:0;
+                    "></div>
+                    <span style="font-size:0.95rem; line-height:1.2;">{acabado_label}</span>
+                </div>
                 """,
                 unsafe_allow_html=True,
             )
+
+            st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
 
             if st.button("Editar", key=f"mueble_abierto_editar_{index}", use_container_width=True):
                 st.session_state["muebles_abiertos"][index]["aceptado"] = False
