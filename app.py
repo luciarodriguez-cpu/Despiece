@@ -1050,6 +1050,12 @@ def _render_open_cabinet_card(index: int) -> None:
     """Renderiza una tarjeta individual de mueble abierto con modo editar/aceptado."""
     cabinet = st.session_state["muebles_abiertos"][index]
     df_acabados, lista_acabados = get_acabados()
+    result_table_names = [
+        str(table_name).strip()
+        for table_name in st.session_state.get("result_table_names", [])
+        if str(table_name).strip()
+    ]
+    should_show_csv_origen = len(result_table_names) > 1
 
     card_key = f"mueble_card_{index}"
     with st.container(key=card_key, border=True):
@@ -1158,24 +1164,21 @@ def _render_open_cabinet_card(index: int) -> None:
                 disabled=not lista_acabados,
             ) if lista_acabados else ""
 
-            result_table_names = [
-                str(table_name).strip()
-                for table_name in st.session_state.get("result_table_names", [])
-                if str(table_name).strip()
-            ]
-            csv_origen_options = [""] + result_table_names
-            csv_origen_previo = str(cabinet.get("csv_origen", "")).strip()
-            csv_origen_default_index = (
-                csv_origen_options.index(csv_origen_previo)
-                if csv_origen_previo in csv_origen_options
-                else 0
-            )
-            csv_origen = st.selectbox(
-                "CSV de origen",
-                options=csv_origen_options,
-                index=csv_origen_default_index,
-                key=f"mueble_abierto_csv_origen_{index}",
-            )
+            csv_origen = ""
+            if should_show_csv_origen:
+                csv_origen_options = [""] + result_table_names
+                csv_origen_previo = str(cabinet.get("csv_origen", "")).strip()
+                csv_origen_default_index = (
+                    csv_origen_options.index(csv_origen_previo)
+                    if csv_origen_previo in csv_origen_options
+                    else 0
+                )
+                csv_origen = st.selectbox(
+                    "Pertenece al despiece:",
+                    options=csv_origen_options,
+                    index=csv_origen_default_index,
+                    key=f"mueble_abierto_csv_origen_{index}",
+                )
 
             if st.button("Aceptar", key=f"mueble_abierto_aceptar_{index}", use_container_width=True):
                 svg = generar_svg_mueble_abierto(
@@ -1206,8 +1209,9 @@ def _render_open_cabinet_card(index: int) -> None:
                 unsafe_allow_html=True,
             )
             st.caption(_build_open_cabinet_description(cabinet))
-            csv_origen = str(cabinet.get("csv_origen", "")).strip()
-            st.caption(f"CSV de origen: {csv_origen if csv_origen else '-'}")
+            if should_show_csv_origen:
+                csv_origen = str(cabinet.get("csv_origen", "")).strip()
+                st.caption(f"Pertenece al despiece: {csv_origen if csv_origen else '-'}")
 
             acabado = str(cabinet.get("acabado", "")).strip()
             color_hex = "#FFFFFF"
