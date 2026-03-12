@@ -800,147 +800,150 @@ def generate_open_cabinet_svg(
     colgado: bool,
     zocalo_mm: int,
 ) -> str:
-    """Genera un SVG paramétrico de mueble abierto en perspectiva frontal ligera."""
-    width_px = 300
-    height_px = 240
-    margin = 20
+    """Genera un SVG paramétrico de mueble abierto respetando reglas geométricas visibles."""
+    width_px, height_px, margin = 320, 250, 18
 
-    body_w = width_px - (2 * margin) - 40
-    body_h = height_px - (2 * margin) - 20
-    sx = body_w / max(float(ancho_mm), 1.0)
-    sy = body_h / max(float(alto_mm), 1.0)
+    draw_w = width_px - (2 * margin) - 55
+    draw_h = height_px - (2 * margin) - 16
+    sx = draw_w / max(float(ancho_mm), 1.0)
+    sy = draw_h / max(float(alto_mm), 1.0)
     scale = min(sx, sy)
 
-    ancho_s = ancho_mm * scale
-    alto_s = alto_mm * scale
-    fondo_s = fondo_mm * scale
-    thickness = max(4.0, 18 * scale)
-    depth_dx = max(22.0, min(48.0, fondo_s * 0.23))
-    depth_dy = -depth_dx * 0.42
+    w = ancho_mm * scale
+    h = alto_mm * scale
+    d = max(1.0, fondo_mm * scale)
+    t = max(3.0, 19.0 * scale)
+    depth_dx = max(20.0, min(52.0, d * 0.27))
+    depth_dy = -depth_dx * 0.38
 
-    x0 = margin + 10
-    ground_y = margin + alto_s + 5
-    top_y = ground_y - alto_s
-    x1 = x0 + ancho_s
+    ox = margin + 12
+    oy = margin + h + 4
 
     zocalo_s = max(0.0, zocalo_mm * scale)
-    if zocalo_mm > 0:
-        base_bottom = ground_y - zocalo_s
-    else:
-        base_bottom = ground_y
-    base_top = base_bottom - thickness
-
-    top_top = top_y
-    top_bottom = top_y + thickness
-    inner_top = top_bottom
+    base_bottom = h - zocalo_s if zocalo_mm > 0 else h
+    base_top = base_bottom - t
+    inner_top = t
     inner_bottom = base_top
 
-    shelf_tops: list[float] = []
-    if num_baldas > 0 and inner_bottom > inner_top:
-        gap = (inner_bottom - inner_top) / (num_baldas + 1)
-        for idx in range(num_baldas):
-            center_y = inner_top + ((idx + 1) * gap)
-            shelf_tops.append(center_y - (thickness / 2))
+    def p(x: float, y: float, z: float = 0.0) -> tuple[float, float]:
+        return ox + x + ((z / max(d, 1e-6)) * depth_dx), oy - y + ((z / max(d, 1e-6)) * depth_dy)
 
-    def line(xa: float, ya: float, xb: float, yb: float, back_a: bool = False, back_b: bool = False) -> str:
-        pa = _project_point(xa, ya, depth_dx, depth_dy, back_a)
-        pb = _project_point(xb, yb, depth_dx, depth_dy, back_b)
-        return f"<line x1='{pa[0]:.2f}' y1='{pa[1]:.2f}' x2='{pb[0]:.2f}' y2='{pb[1]:.2f}' />"
+    def line3(a: tuple[float, float, float], b: tuple[float, float, float]) -> str:
+        x1, y1 = p(*a)
+        x2, y2 = p(*b)
+        return f"<line x1='{x1:.2f}' y1='{y1:.2f}' x2='{x2:.2f}' y2='{y2:.2f}' />"
 
     parts: list[str] = [
         f"<svg xmlns='http://www.w3.org/2000/svg' width='{width_px}' height='{height_px}' viewBox='0 0 {width_px} {height_px}'>",
         "<rect width='100%' height='100%' fill='white' />",
-        "<g stroke='#2e2e2e' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'>",
+        "<g stroke='#2f2f2f' stroke-width='1.55' fill='none' stroke-linecap='round' stroke-linejoin='round'>",
     ]
 
-    # Contorno principal visible (frontal + perspectiva trasera visible).
+    side_bottom = h if zocalo_mm > 0 else base_bottom
+
+    # Caras visibles exteriores: frontal + superior + lateral derecho.
     parts.extend(
         [
-            line(x0, top_top, x1, top_top),
-            line(x0, top_top, x0, base_bottom),
-            line(x1, top_top, x1, base_bottom),
-            line(x0, base_bottom, x1, base_bottom),
-            line(x0, top_top, x0, top_top, False, True),
-            line(x1, top_top, x1, top_top, False, True),
-            line(x1, base_bottom, x1, base_bottom, False, True),
-            line(x0, top_top, x1, top_top, True, True),
-            line(x1, top_top, x1, base_bottom, True, True),
+            line3((0, 0, 0), (w, 0, 0)),
+            line3((0, 0, 0), (0, side_bottom, 0)),
+            line3((w, 0, 0), (w, side_bottom, 0)),
+            line3((0, 0, 0), (0, 0, d)),
+            line3((w, 0, 0), (w, 0, d)),
+            line3((0, 0, d), (w, 0, d)),
+            line3((w, 0, d), (w, side_bottom, d)),
+            line3((w, side_bottom, 0), (w, side_bottom, d)),
         ]
     )
 
-    # Tapa y base con espesor.
+    # Tapa y base: cara superior + arista frontal inferior visible del espesor.
     parts.extend(
         [
-            line(x0, top_bottom, x1, top_bottom),
-            line(x1, top_bottom, x1, top_bottom, False, True),
-            line(x0, base_top, x1, base_top),
-            line(x1, base_top, x1, base_top, False, True),
+            line3((0, t, 0), (w, t, 0)),
+            line3((w, t, 0), (w, t, d)),
+            line3((0, base_top, 0), (w, base_top, 0)),
+            line3((w, base_top, 0), (w, base_top, d)),
+            line3((0, base_bottom, 0), (w, base_bottom, 0)),
         ]
     )
 
-    # Arista trasera derecha del lateral izquierdo segmentada para no cruzar baldas/tapa/base.
-    rear_left_x, rear_left_top = _project_point(x0, top_bottom, depth_dx, depth_dy, True)
-    _, rear_left_bottom = _project_point(x0, base_top, depth_dx, depth_dy, True)
-    cursor = rear_left_top
-    for shelf_top in shelf_tops:
-        shelf_back_top = _project_point(x0, shelf_top, depth_dx, depth_dy, True)[1]
-        shelf_back_bottom = _project_point(x0, shelf_top + thickness, depth_dx, depth_dy, True)[1]
-        if shelf_back_top > cursor:
-            parts.append(f"<line x1='{rear_left_x:.2f}' y1='{cursor:.2f}' x2='{rear_left_x:.2f}' y2='{shelf_back_top:.2f}' />")
-        cursor = shelf_back_bottom
-    if rear_left_bottom > cursor:
-        parts.append(f"<line x1='{rear_left_x:.2f}' y1='{cursor:.2f}' x2='{rear_left_x:.2f}' y2='{rear_left_bottom:.2f}' />")
+    # Baldas equidistantes entre cara inferior de tapa y cara superior de base.
+    shelf_tops: list[float] = []
+    if num_baldas > 0 and inner_bottom > inner_top:
+        step = (inner_bottom - inner_top) / (num_baldas + 1)
+        for i in range(num_baldas):
+            center_y = inner_top + ((i + 1) * step)
+            shelf_tops.append(center_y - (t / 2))
 
-    # Balda(s) equidistantes entre tapa y base.
+    shelf_x0 = t
+    shelf_x1 = w - t
     for shelf_top in shelf_tops:
-        shelf_bottom = shelf_top + thickness
+        shelf_bottom = shelf_top + t
         parts.extend(
             [
-                line(x0, shelf_top, x1, shelf_top),
-                line(x1, shelf_top, x1, shelf_top, False, True),
-                line(x0, shelf_bottom, x1, shelf_bottom),
-                line(x1, shelf_bottom, x1, shelf_bottom, False, True),
-                line(x1, shelf_top, x1, shelf_bottom),
+                line3((shelf_x0, shelf_top, 0), (shelf_x1, shelf_top, 0)),
+                line3((shelf_x1, shelf_top, 0), (shelf_x1, shelf_top, d)),
+                line3((shelf_x0, shelf_bottom, 0), (shelf_x1, shelf_bottom, 0)),
+                line3((shelf_x1, shelf_bottom, 0), (shelf_x1, shelf_bottom, d)),
             ]
         )
 
-    # Trasera interior.
-    back_left = x0 + thickness
-    back_right = x1 - thickness
+    # Arista trasera derecha del lateral izquierdo en tramos visibles.
+    rear_x = p(0, 0, d)[0]
+    y_cursor = p(0, t + 0.6, d)[1]
+    y_end = p(0, base_top, d)[1]
+    for shelf_top in shelf_tops:
+        shelf_back_top = p(0, shelf_top, d)[1]
+        shelf_front_bottom = p(0, shelf_top + t, 0)[1]
+        if shelf_back_top > y_cursor:
+            parts.append(f"<line x1='{rear_x:.2f}' y1='{y_cursor:.2f}' x2='{rear_x:.2f}' y2='{shelf_back_top:.2f}' />")
+        y_cursor = shelf_front_bottom
+    if y_end > y_cursor:
+        parts.append(f"<line x1='{rear_x:.2f}' y1='{y_cursor:.2f}' x2='{rear_x:.2f}' y2='{y_end:.2f}' />")
+
+    # Trasera real en límites internos exactos (sin invadir piezas).
+    back_left = t
+    back_right = w - t
     parts.extend(
         [
-            line(back_left, inner_top, back_right, inner_top, True, True),
-            line(back_left, inner_bottom, back_right, inner_bottom, True, True),
-            line(back_right, inner_top, back_right, inner_bottom, True, True),
+            line3((back_left, inner_bottom, d), (back_right, inner_bottom, d)),
+            line3((back_left, inner_top, d), (back_left, inner_bottom, d)),
+            line3((back_right, inner_top, d), (back_right, inner_bottom, d)),
         ]
     )
 
-    # Zócalo opcional (solo cara frontal visible).
+    # Zócalo opcional retranqueado 100 mm hacia atrás en la misma línea de perspectiva.
     if zocalo_mm > 0:
-        visible_zocalo = max(0.0, (zocalo_mm - 5) * scale)
-        z_front_x = x0 + max(12.0, 100 * scale * 0.45)
-        z_top = base_bottom
-        z_bottom = min(ground_y, z_top + visible_zocalo)
-        z_right = x1
+        z_h = max(0.0, (zocalo_mm - 5) * scale)
+        z_top = base_bottom - (5 * scale)
+        z_bottom = min(h, z_top + z_h)
+        z_depth = min(d, 100 * scale)
+        z_left = t
+        z_right = w - t
         parts.extend(
             [
-                line(z_front_x, z_top, z_right, z_top),
-                line(z_front_x, z_top, z_front_x, z_bottom),
-                line(z_front_x, z_bottom, z_right, z_bottom),
+                line3((z_left, z_top, z_depth), (z_left, z_bottom, z_depth)),
+                line3((z_left, z_bottom, z_depth), (z_right, z_bottom, z_depth)),
+                line3((z_right, z_top, z_depth), (z_right, z_bottom, z_depth)),
             ]
         )
 
-    # Agujeros de colgar en trasera real (Ø17mm).
+    # Agujeros de colgar (Ø17) sobre trasera real; solo visibles.
     if colgado:
-        hole_radius = max(1.6, (17 * scale) / 2)
+        hole_r = max(1.5, (17 * scale) / 2)
         hole_y = inner_top + (75 * scale)
-        left_hole_x = back_left + (16.5 * scale)
-        right_hole_x = back_right - (16.5 * scale)
+        hole_left_x = back_left + (16.5 * scale)
+        hole_right_x = back_right - (16.5 * scale)
 
-        for hole_x in [left_hole_x, right_hole_x]:
-            hx, hy = _project_point(hole_x, hole_y, depth_dx, depth_dy, True)
-            if hx >= x0 and hy >= top_top:
-                parts.append(f"<circle cx='{hx:.2f}' cy='{hy:.2f}' r='{hole_radius:.2f}' />")
+        hx_l, hy_l = p(hole_left_x, hole_y, d)
+        parts.append(
+            f"<ellipse cx='{hx_l:.2f}' cy='{hy_l:.2f}' rx='{hole_r * 0.95:.2f}' ry='{hole_r * 0.75:.2f}' />"
+        )
+
+        hx_r, hy_r = p(hole_right_x, hole_y, d)
+        if hx_r < p(w, hole_y, 0)[0] - 0.2:
+            parts.append(
+                f"<ellipse cx='{hx_r:.2f}' cy='{hy_r:.2f}' rx='{hole_r * 0.95:.2f}' ry='{hole_r * 0.75:.2f}' />"
+            )
 
     parts.append("</g></svg>")
     return "".join(parts)
