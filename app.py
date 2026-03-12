@@ -1225,28 +1225,41 @@ def render_open_cabinet_generator_section() -> None:
     """Renderiza sección de muebles abiertos con tarjetas independientes."""
     _ensure_open_cabinets_state()
 
-    control_col_button, control_col_select = st.columns([3.4, 1], vertical_alignment="bottom")
-    with control_col_button:
-        if st.button("Añadir muebles abiertos"):
-            st.session_state["open_cabinets_visible"] = True
+    controls_anchor_col, _ = st.columns([0.38, 0.62], vertical_alignment="bottom")
+    with controls_anchor_col:
+        control_col_button, control_col_select = st.columns([0.82, 0.18], gap="small", vertical_alignment="bottom")
+        with control_col_button:
+            if st.button("Añadir muebles abiertos", use_container_width=True):
+                st.session_state["open_cabinets_visible"] = True
+
+        current_count = len(st.session_state["muebles_abiertos"])
+        opciones_cantidad = list(range(0, 11))
+        default_index = current_count if current_count in opciones_cantidad else min(current_count, 10)
+
+        with control_col_select:
+            st.markdown(
+                """
+                <style>
+                  [class*="st-key-open_cabinets_qty"] [data-testid="stSelectbox"] {
+                    max-width: 72px;
+                  }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+            with st.container(key="open_cabinets_qty"):
+                cantidad_muebles_abiertos = int(
+                    st.selectbox(
+                        "Cantidad",
+                        options=opciones_cantidad,
+                        index=default_index,
+                        key="cantidad_muebles_abiertos",
+                        label_visibility="collapsed",
+                    )
+                )
 
     if not st.session_state["open_cabinets_visible"]:
         return
-
-    current_count = len(st.session_state["muebles_abiertos"])
-    opciones_cantidad = list(range(0, 11))
-    default_index = current_count if current_count in opciones_cantidad else min(current_count, 10)
-
-    with control_col_select:
-        cantidad_muebles_abiertos = int(
-            st.selectbox(
-                "Cantidad",
-                options=opciones_cantidad,
-                index=default_index,
-                key="cantidad_muebles_abiertos",
-                label_visibility="collapsed",
-            )
-        )
 
     _sync_open_cabinets_count(cantidad_muebles_abiertos)
 
