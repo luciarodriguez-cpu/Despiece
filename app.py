@@ -979,6 +979,10 @@ def _sync_open_cabinets_count(target_count: int) -> None:
     if len(cabinets) > target_count:
         del cabinets[target_count:]
 
+        if st.button("Editar", key=f"mueble_abierto_editar_{index}", use_container_width=True):
+            st.session_state["muebles_abiertos"][index]["aceptado"] = False
+            st.session_state["muebles_abiertos"][index]["svg"] = ""
+            st.rerun()
 
 def _build_open_cabinet_description(cabinet: dict[str, object]) -> str:
     """Construye descripción textual del mueble abierto con pluralización."""
