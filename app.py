@@ -963,6 +963,10 @@ def render_open_cabinet_generator_section() -> None:
     """Renderiza alta simple de mueble abierto con SVG externo."""
     if "open_cabinet_visible" not in st.session_state:
         st.session_state["open_cabinet_visible"] = False
+    if "open_cabinet_svg" not in st.session_state:
+        st.session_state["open_cabinet_svg"] = ""
+    if "open_cabinet_description" not in st.session_state:
+        st.session_state["open_cabinet_description"] = ""
 
     if st.button("Añadir muebles abiertos"):
         st.session_state["open_cabinet_visible"] = True
@@ -970,30 +974,39 @@ def render_open_cabinet_generator_section() -> None:
     if not st.session_state["open_cabinet_visible"]:
         return
 
-    ancho_mm = st.number_input("Ancho (mm)", value=600)
-    alto_mm = st.number_input("Alto (mm)", value=800)
-    fondo_mm = st.number_input("Fondo (mm)", value=396)
-    num_baldas = st.number_input("Número de baldas", value=1)
-    colgado = st.checkbox("Lleva herrajes de colgar")
-    zocalo_mm = st.number_input("Altura rodapié (mm)", value=0)
+    col_inputs, col_preview = st.columns([2, 1])
 
-    if st.button("Aceptar mueble abierto"):
-        svg = generar_svg_mueble_abierto(
-            ancho_mm=ancho_mm,
-            alto_mm=alto_mm,
-            fondo_mm=fondo_mm,
-            num_baldas=int(num_baldas),
-            colgado=colgado,
-            zocalo_mm=zocalo_mm,
-        )
-        st.markdown(svg, unsafe_allow_html=True)
+    with col_inputs:
+        ancho_mm = st.number_input("Ancho (mm)", value=600)
+        alto_mm = st.number_input("Alto (mm)", value=800)
+        fondo_mm = st.number_input("Fondo (mm)", value=396)
+        num_baldas = st.number_input("Número de baldas", value=1)
+        colgado = st.checkbox("Lleva herrajes de colgar")
+        zocalo_mm = st.number_input("Altura rodapié (mm)", value=0)
 
-        colgado_text = "colgado" if colgado else "no colgado"
-        baldas_text = "balda" if int(num_baldas) == 1 else "baldas"
-        st.markdown(
-            f"Mueble abierto {int(ancho_mm)} x {int(alto_mm)} x {int(fondo_mm)} mm, "
-            f"{int(num_baldas)} {baldas_text}, {colgado_text}, rodapié {int(zocalo_mm)} mm"
-        )
+        if st.button("Aceptar mueble abierto"):
+            svg = generar_svg_mueble_abierto(
+                ancho_mm=ancho_mm,
+                alto_mm=alto_mm,
+                fondo_mm=fondo_mm,
+                num_baldas=int(num_baldas),
+                colgado=colgado,
+                zocalo_mm=zocalo_mm,
+            )
+            descripcion = (
+                f"Mueble abierto {ancho_mm} x {alto_mm} x {fondo_mm} mm, {num_baldas} baldas, "
+                f"{'colgado' if colgado else 'no colgado'}, rodapié {zocalo_mm} mm"
+            )
+            st.session_state["open_cabinet_svg"] = svg
+            st.session_state["open_cabinet_description"] = descripcion
+
+    with col_preview:
+        if st.session_state["open_cabinet_svg"]:
+            st.markdown(
+                f"<div style='width:250px'>{st.session_state['open_cabinet_svg']}</div>",
+                unsafe_allow_html=True,
+            )
+            st.write(st.session_state["open_cabinet_description"])
 
 
 def render_open_cabinets_section() -> None:
