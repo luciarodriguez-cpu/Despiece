@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from mueble_abierto_svg import generar_svg_mueble_abierto
 
 
 st.set_page_config(page_title="Despiece", page_icon="📋", layout="wide")
@@ -956,6 +957,43 @@ def build_open_cabinet_description(cabinet: dict[str, object]) -> str:
         f"Mueble abierto {cabinet['ancho_mm']} x {cabinet['alto_mm']} x {cabinet['fondo_mm']} mm, "
         f"{cabinet['num_baldas']} baldas, {colgado_text}, rodapié {cabinet['zocalo_mm']} mm"
     )
+
+
+def render_open_cabinet_generator_section() -> None:
+    """Renderiza alta simple de mueble abierto con SVG externo."""
+    if "open_cabinet_visible" not in st.session_state:
+        st.session_state["open_cabinet_visible"] = False
+
+    if st.button("Añadir muebles abiertos"):
+        st.session_state["open_cabinet_visible"] = True
+
+    if not st.session_state["open_cabinet_visible"]:
+        return
+
+    ancho_mm = st.number_input("Ancho (mm)", value=600)
+    alto_mm = st.number_input("Alto (mm)", value=800)
+    fondo_mm = st.number_input("Fondo (mm)", value=396)
+    num_baldas = st.number_input("Número de baldas", value=1)
+    colgado = st.checkbox("Lleva herrajes de colgar")
+    zocalo_mm = st.number_input("Altura rodapié (mm)", value=0)
+
+    if st.button("Aceptar mueble abierto"):
+        svg = generar_svg_mueble_abierto(
+            ancho_mm=ancho_mm,
+            alto_mm=alto_mm,
+            fondo_mm=fondo_mm,
+            num_baldas=int(num_baldas),
+            colgado=colgado,
+            zocalo_mm=zocalo_mm,
+        )
+        st.markdown(svg, unsafe_allow_html=True)
+
+        colgado_text = "colgado" if colgado else "no colgado"
+        baldas_text = "balda" if int(num_baldas) == 1 else "baldas"
+        st.markdown(
+            f"Mueble abierto {int(ancho_mm)} x {int(alto_mm)} x {int(fondo_mm)} mm, "
+            f"{int(num_baldas)} {baldas_text}, {colgado_text}, rodapié {int(zocalo_mm)} mm"
+        )
 
 
 def render_open_cabinets_section() -> None:
@@ -2425,7 +2463,7 @@ else:
                     "Cuidado: Es posible que haya menos rodapiés de los necesarios en el despiece "
                     f"(REFERENCIA: {subtitulo} | Rodapiés: {lenz_mm} mm | Longitud de módulos: {leny_mm} mm)."
                 )
-            render_open_cabinets_section()
+            render_open_cabinet_generator_section()
             if can_download:
                 st.download_button(
                     label="Descargar despiece",
