@@ -372,6 +372,16 @@ def generar_svg_mueble_abierto(
         ]
     )
 
+    # Lateral izquierdo de la hornacina (cara interior)
+    add_polygon(
+        [
+            (x_inner_left_front, y_tapa_bottom_front),
+            (x_inner_back_left, y_tapa_bottom_back),
+            (x_inner_back_left, y_base_top_back),
+            (x_inner_left_front, y_base_top_front),
+        ]
+    )
+
     # Base (cara superior y frontal)
     add_polygon(
         [
