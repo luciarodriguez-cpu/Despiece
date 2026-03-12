@@ -1181,6 +1181,12 @@ def _render_open_cabinet_card(index: int) -> None:
                 )
 
             if st.button("Aceptar", key=f"mueble_abierto_aceptar_{index}", use_container_width=True):
+                color_hex = "#FFFFFF"
+                if acabado:
+                    fila = df_acabados[df_acabados["Color CUBRO"].astype(str).str.strip() == acabado]
+                    if not fila.empty:
+                        color_hex = str(fila.iloc[0]["HEX"]).strip() or "#FFFFFF"
+
                 svg = generar_svg_mueble_abierto(
                     ancho_mm=ancho_mm,
                     alto_mm=alto_mm,
@@ -1188,6 +1194,7 @@ def _render_open_cabinet_card(index: int) -> None:
                     num_baldas=num_baldas,
                     colgado=colgado,
                     zocalo_mm=zocalo_mm,
+                    color_hex=color_hex,
                 )
                 st.session_state["muebles_abiertos"][index] = {
                     "ancho_mm": ancho_mm,
