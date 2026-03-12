@@ -980,6 +980,22 @@ def _sync_open_cabinets_count(target_count: int) -> None:
         del cabinets[target_count:]
 
 
+def reset_muebles_abiertos_state() -> None:
+    """Limpia todo el estado de muebles abiertos para evitar persistencia entre documentos."""
+    keys_to_clear = [
+        "muebles_abiertos",
+        "open_cabinets_visible",
+        "cantidad_muebles_abiertos",
+    ]
+    for key in keys_to_clear:
+        st.session_state.pop(key, None)
+
+    for state_key in list(st.session_state.keys()):
+        state_key_str = str(state_key)
+        if state_key_str.startswith("mueble_abierto_") or state_key_str.startswith("mueble_card_"):
+            st.session_state.pop(state_key, None)
+
+
 def _build_open_cabinet_description(cabinet: dict[str, object]) -> str:
     """Construye descripción textual del mueble abierto con pluralización."""
     num_baldas = int(cabinet["num_baldas"])
@@ -2308,6 +2324,7 @@ if not uploaded_files:
     st.session_state.pop("post_issues_df", None)
     st.session_state.pop("u22_mode", None)
     st.session_state.pop("u22_selected_keys", None)
+    reset_muebles_abiertos_state()
     for state_key in list(st.session_state.keys()):
         if str(state_key).startswith("name_review_editor_"):
             st.session_state.pop(state_key, None)
@@ -2336,6 +2353,7 @@ else:
         st.session_state.pop("u22_mode", None)
         st.session_state.pop("u22_selected_keys", None)
         st.session_state.pop("post_issues_df", None)
+        reset_muebles_abiertos_state()
         for state_key in list(st.session_state.keys()):
             if str(state_key).startswith("name_review_editor_"):
                 st.session_state.pop(state_key, None)
