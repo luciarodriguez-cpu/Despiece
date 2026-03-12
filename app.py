@@ -1046,6 +1046,36 @@ def _build_open_cabinet_description(cabinet: dict[str, object]) -> str:
     )
 
 
+def _tighten_svg_viewbox(svg_markup: str) -> str:
+    """Recorta márgenes visuales del SVG sin alterar su geometría interna."""
+    svg_text = (svg_markup or "").strip()
+    if not svg_text:
+        return ""
+
+    match = re.search(r'viewBox="([^"]+)"', svg_text)
+    if not match:
+        return svg_text
+
+    try:
+        min_x, min_y, width, height = [float(value) for value in match.group(1).split()]
+    except (TypeError, ValueError):
+        return svg_text
+
+    if width <= 0 or height <= 0:
+        return svg_text
+
+    trim_x = width * 0.14
+    trim_y = height * 0.14
+
+    new_min_x = min_x + trim_x
+    new_min_y = min_y + trim_y
+    new_width = max(width - 2 * trim_x, width * 0.40)
+    new_height = max(height - 2 * trim_y, height * 0.40)
+
+    new_viewbox = f'viewBox="{new_min_x:.1f} {new_min_y:.1f} {new_width:.1f} {new_height:.1f}"'
+    return svg_text.replace(match.group(0), new_viewbox, 1)
+
+
 def _render_open_cabinet_card(index: int) -> None:
     """Renderiza una tarjeta individual de mueble abierto con modo editar/aceptado."""
     cabinet = st.session_state["muebles_abiertos"][index]
@@ -1065,44 +1095,46 @@ def _render_open_cabinet_card(index: int) -> None:
               [class*="st-key-mueble_card_"] {
                 background-color: #f6f8fc;
                 border-radius: 10px;
-                padding: 0.1rem 0.28rem;
-                margin: 0 auto 0.08rem auto;
-                width: 172px;
-                max-width: 172px;
+                padding: 0.18rem 0.34rem 0.26rem 0.34rem;
+                margin: 0 auto 0.04rem auto;
+                width: 184px;
+                max-width: 184px;
               }
               [class*="st-key-mueble_card_"] [data-testid="stMarkdownContainer"] p {
-                margin-bottom: 0.2rem;
+                margin-bottom: 0.16rem;
               }
               [class*="st-key-mueble_card_"] .open-cabinet-preview {
-                width: 132px;
-                height: 72px;
-                margin: 2px auto 4px auto;
+                width: 170px;
+                height: 104px;
+                margin: 0 auto 5px auto;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 overflow: hidden;
-                border: 1px solid #dde4ef;
-                border-radius: 7px;
-                background: #ffffff;
+                padding: 0;
+                border: none;
+                border-radius: 6px;
+                background: transparent;
               }
               [class*="st-key-mueble_card_"] .open-cabinet-preview svg {
                 width: 100%;
                 height: 100%;
                 object-fit: contain;
+                display: block;
               }
               [class*="st-key-mueble_card_"] [data-testid="stVerticalBlock"] {
-                gap: 0.24rem;
+                gap: 0.18rem;
               }
               [class*="st-key-mueble_card_"] [data-testid="stCaptionContainer"] {
                 margin-top: 0;
                 margin-bottom: 0;
-                line-height: 1.15;
-                font-size: 0.72rem;
+                line-height: 1.18;
+                font-size: 0.74rem;
               }
               [class*="st-key-mueble_card_"] [data-testid="stNumberInput"] label,
               [class*="st-key-mueble_card_"] [data-testid="stCheckbox"] label,
               [class*="st-key-mueble_card_"] [data-testid="stSelectbox"] label {
-                font-size: 0.73rem;
+                font-size: 0.74rem;
                 margin-bottom: 0.08rem;
               }
               [class*="st-key-mueble_card_"] [data-baseweb="input"] input {
@@ -1115,10 +1147,22 @@ def _render_open_cabinet_card(index: int) -> None:
                 min-height: 1.85rem;
                 font-size: 0.82rem;
               }
-              [class*="st-key-mueble_card_"] [data-testid="stButton"] button {
-                min-height: 1.95rem;
-                padding-top: 0.18rem;
-                padding-bottom: 0.18rem;
+              [class*="st-key-mueble_card_"] .open-cabinet-finish-row {
+                display: flex;
+                align-items: center;
+                gap: 7px;
+                margin-top: 1px;
+              }
+              [class*="st-key-mueble_card_"] .open-cabinet-finish-swatch {
+                width: 22px;
+                height: 22px;
+                border-radius: 4px;
+                border: 1px solid #888;
+                flex-shrink: 0;
+              }
+              [class*="st-key-mueble_card_"] .open-cabinet-finish-label {
+                font-size: 0.86rem;
+                line-height: 1.18;
               }
             </style>
             """,
@@ -1242,7 +1286,7 @@ def _render_open_cabinet_card(index: int) -> None:
                 }
                 st.rerun()
         else:
-            svg = str(cabinet.get("svg", ""))
+            svg = _tighten_svg_viewbox(str(cabinet.get("svg", "")))
             st.markdown(
                 f"<div class='open-cabinet-preview'>{svg}</div>",
                 unsafe_allow_html=True,
@@ -1262,32 +1306,19 @@ def _render_open_cabinet_card(index: int) -> None:
             acabado_label = html.escape(acabado) if acabado else "Sin acabado"
             st.markdown(
                 f"""
-                <div style="
-                    display:flex;
-                    align-items:center;
-                    gap:8px;
-                    margin-top:6px;
-                ">
-                    <div style="
-                        width:28px;
-                        height:28px;
-                        background:{color_hex};
-                        border-radius:4px;
-                        border:1px solid #888;
-                        flex-shrink:0;
-                    "></div>
-                    <span style="font-size:0.95rem; line-height:1.2;">{acabado_label}</span>
+                <div class="open-cabinet-finish-row">
+                    <div class="open-cabinet-finish-swatch" style="background:{color_hex};"></div>
+                    <span class="open-cabinet-finish-label">{acabado_label}</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-            st.markdown("<div style='height:3px;'></div>", unsafe_allow_html=True)
-
-            if st.button("Editar", key=f"mueble_abierto_editar_{index}", use_container_width=True):
-                st.session_state["muebles_abiertos"][index]["aceptado"] = False
-                st.session_state["muebles_abiertos"][index]["svg"] = ""
-                st.rerun()
+    if cabinet.get("aceptado", False):
+        if st.button("Editar", key=f"mueble_abierto_editar_{index}", use_container_width=True):
+            st.session_state["muebles_abiertos"][index]["aceptado"] = False
+            st.session_state["muebles_abiertos"][index]["svg"] = ""
+            st.rerun()
 
 
 def render_open_cabinet_generator_section() -> None:
@@ -1336,11 +1367,11 @@ def render_open_cabinet_generator_section() -> None:
         """
         <style>
           [class*="st-key-open_cabinet_cards_grid"] [data-testid="column"] {
-            padding-left: 0.12rem;
-            padding-right: 0.12rem;
+            padding-left: 0.03rem;
+            padding-right: 0.03rem;
           }
           [class*="st-key-open_cabinet_cards_grid"] [data-testid="stVerticalBlock"] {
-            gap: 0.16rem;
+            gap: 0.08rem;
           }
         </style>
         """,
