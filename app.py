@@ -995,6 +995,7 @@ def _default_open_cabinet() -> dict[str, object]:
         "acabado": "",
         "aceptado": False,
         "svg": "",
+        "csv_origen": "",
     }
 
 
@@ -1004,6 +1005,8 @@ def _ensure_open_cabinets_state() -> None:
         st.session_state["open_cabinets_visible"] = False
     if "muebles_abiertos" not in st.session_state:
         st.session_state["muebles_abiertos"] = []
+    if "result_table_names" not in st.session_state:
+        st.session_state["result_table_names"] = []
 
 
 def _sync_open_cabinets_count(target_count: int) -> None:
@@ -1021,6 +1024,7 @@ def reset_muebles_abiertos_state() -> None:
         "muebles_abiertos",
         "open_cabinets_visible",
         "cantidad_muebles_abiertos",
+        "result_table_names",
     ]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
@@ -1046,6 +1050,12 @@ def _render_open_cabinet_card(index: int) -> None:
     """Renderiza una tarjeta individual de mueble abierto con modo editar/aceptado."""
     cabinet = st.session_state["muebles_abiertos"][index]
     df_acabados, lista_acabados = get_acabados()
+    result_table_names = [
+        str(table_name).strip()
+        for table_name in st.session_state.get("result_table_names", [])
+        if str(table_name).strip()
+    ]
+    should_show_csv_origen = len(result_table_names) > 1
 
     card_key = f"mueble_card_{index}"
     with st.container(key=card_key, border=True):
@@ -1154,6 +1164,22 @@ def _render_open_cabinet_card(index: int) -> None:
                 disabled=not lista_acabados,
             ) if lista_acabados else ""
 
+            csv_origen = ""
+            if should_show_csv_origen:
+                csv_origen_options = [""] + result_table_names
+                csv_origen_previo = str(cabinet.get("csv_origen", "")).strip()
+                csv_origen_default_index = (
+                    csv_origen_options.index(csv_origen_previo)
+                    if csv_origen_previo in csv_origen_options
+                    else 0
+                )
+                csv_origen = st.selectbox(
+                    "Pertenece al despiece:",
+                    options=csv_origen_options,
+                    index=csv_origen_default_index,
+                    key=f"mueble_abierto_csv_origen_{index}",
+                )
+
             if st.button("Aceptar", key=f"mueble_abierto_aceptar_{index}", use_container_width=True):
                 svg = generar_svg_mueble_abierto(
                     ancho_mm=ancho_mm,
@@ -1171,6 +1197,7 @@ def _render_open_cabinet_card(index: int) -> None:
                     "colgado": colgado,
                     "zocalo_mm": zocalo_mm,
                     "acabado": acabado,
+                    "csv_origen": csv_origen,
                     "aceptado": True,
                     "svg": svg,
                 }
@@ -1182,6 +1209,9 @@ def _render_open_cabinet_card(index: int) -> None:
                 unsafe_allow_html=True,
             )
             st.caption(_build_open_cabinet_description(cabinet))
+            if should_show_csv_origen:
+                csv_origen = str(cabinet.get("csv_origen", "")).strip()
+                st.caption(f"Pertenece al despiece: {csv_origen if csv_origen else '-'}")
 
             acabado = str(cabinet.get("acabado", "")).strip()
             color_hex = "#FFFFFF"
@@ -2419,6 +2449,7 @@ if not uploaded_files:
     st.session_state.pop("post_issues_df", None)
     st.session_state.pop("u22_mode", None)
     st.session_state.pop("u22_selected_keys", None)
+    st.session_state["result_table_names"] = []
     reset_muebles_abiertos_state()
     for state_key in list(st.session_state.keys()):
         if str(state_key).startswith("name_review_editor_"):
@@ -2514,6 +2545,8 @@ else:
             )
             transformed_dfs.append(transformed_df)
             source_subtitles.append(get_project_subtitle_from_filename(uploaded_file.name))
+
+        st.session_state["result_table_names"] = source_subtitles.copy()
 
         final_df = pd.concat(transformed_dfs, ignore_index=True)
         final_df = fit_dimensions_to_standards(final_df, df_dimensiones, tolerance=1.75)
