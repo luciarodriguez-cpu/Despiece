@@ -1360,14 +1360,6 @@ def render_open_cabinet_generator_section() -> None:
           [class*="st-key-open_cabinets_qty"] [data-testid="stSelectbox"] {
             max-width: 88px;
           }
-          [class*="st-key-open_cabinets_qty"] .open-cabinets-qty-label {
-            margin: 0;
-            font-size: 1rem;
-            font-weight: 600;
-            line-height: 1.5;
-            color: rgb(49, 51, 63);
-            white-space: nowrap;
-          }
           [class*="st-key-open_cabinets_qty"] [data-testid="column"] {
             padding-left: 0;
             padding-right: 0;
@@ -1377,9 +1369,9 @@ def render_open_cabinet_generator_section() -> None:
         unsafe_allow_html=True,
     )
     with st.container(key="open_cabinets_qty"):
-        qty_label_col, qty_select_col = st.columns([1.35, 0.42], vertical_alignment="center", gap="small")
+        qty_label_col, qty_select_col, qty_spacer_col = st.columns([1.55, 0.32, 4.2], vertical_alignment="center", gap="small")
         with qty_label_col:
-            st.markdown('<p class="open-cabinets-qty-label">Cantidad de muebles abiertos</p>', unsafe_allow_html=True)
+            st.markdown("Cantidad de muebles abiertos")
         with qty_select_col:
             cantidad_muebles_abiertos = int(
                 st.selectbox(
@@ -1390,6 +1382,8 @@ def render_open_cabinet_generator_section() -> None:
                     label_visibility="collapsed",
                 )
             )
+        with qty_spacer_col:
+            st.empty()
 
     _sync_open_cabinets_count(cantidad_muebles_abiertos)
 
