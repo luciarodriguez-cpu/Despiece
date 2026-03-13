@@ -1358,22 +1358,26 @@ def render_open_cabinet_generator_section() -> None:
         """
         <style>
           [class*="st-key-open_cabinets_qty"] [data-testid="stSelectbox"] {
-            max-width: 72px;
+            max-width: 88px;
           }
           [class*="st-key-open_cabinets_qty"] .open-cabinets-qty-label {
             margin: 0;
             font-size: 1rem;
             font-weight: 600;
             line-height: 1.5;
-            text-align: right;
+            color: rgb(49, 51, 63);
             white-space: nowrap;
+          }
+          [class*="st-key-open_cabinets_qty"] [data-testid="column"] {
+            padding-left: 0;
+            padding-right: 0;
           }
         </style>
         """,
         unsafe_allow_html=True,
     )
     with st.container(key="open_cabinets_qty"):
-        qty_label_col, qty_select_col, _ = st.columns([2.2, 0.8, 7], vertical_alignment="center", gap="small")
+        qty_label_col, qty_select_col = st.columns([1.35, 0.42], vertical_alignment="center", gap="small")
         with qty_label_col:
             st.markdown('<p class="open-cabinets-qty-label">Cantidad de muebles abiertos</p>', unsafe_allow_html=True)
         with qty_select_col:
