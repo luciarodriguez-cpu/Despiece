@@ -1360,14 +1360,22 @@ def render_open_cabinet_generator_section() -> None:
           [class*="st-key-open_cabinets_qty"] [data-testid="stSelectbox"] {
             max-width: 72px;
           }
+          [class*="st-key-open_cabinets_qty"] .open-cabinets-qty-label {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+            line-height: 1.5;
+            text-align: right;
+            white-space: nowrap;
+          }
         </style>
         """,
         unsafe_allow_html=True,
     )
     with st.container(key="open_cabinets_qty"):
-        qty_label_col, qty_select_col = st.columns([3, 1], vertical_alignment="center")
+        qty_label_col, qty_select_col, _ = st.columns([2.2, 0.8, 7], vertical_alignment="center", gap="small")
         with qty_label_col:
-            st.markdown("Cantidad de muebles abiertos")
+            st.markdown('<p class="open-cabinets-qty-label">Cantidad de muebles abiertos</p>', unsafe_allow_html=True)
         with qty_select_col:
             cantidad_muebles_abiertos = int(
                 st.selectbox(
