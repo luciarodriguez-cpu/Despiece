@@ -1097,20 +1097,23 @@ def _render_open_cabinet_card(index: int) -> None:
                 border-radius: 10px;
                 box-sizing: border-box;
                 padding: 0.34rem 0.42rem 0.42rem 0.42rem;
-                margin: 0 auto 0.12rem auto;
-                width: 196px;
-                max-width: 196px;
+                margin: 0 0 0.12rem 0;
+                width: 100%;
+                max-width: none;
                 min-height: 246px;
                 overflow: hidden;
               }
               [class*="st-key-mueble_card_"] [data-testid="stMarkdownContainer"] p {
                 margin-bottom: 0.24rem;
               }
+              [class*="st-key-mueble_card_"] [data-testid="stVerticalBlock"] > [data-testid="element-container"]:nth-child(2) {
+                margin-top: 0.22rem;
+              }
               [class*="st-key-mueble_card_"] .open-cabinet-preview {
                 width: 176px;
                 min-height: 118px;
                 height: 118px;
-                margin: 0 auto 8px auto;
+                margin: 4px auto 8px auto;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -1174,8 +1177,8 @@ def _render_open_cabinet_card(index: int) -> None:
               }
               [class*="st-key-mueble_edit_wrap_"] {
                 box-sizing: border-box;
-                width: 196px;
-                max-width: 196px;
+                width: 100%;
+                max-width: none;
                 margin: 0 auto;
               }
               [class*="st-key-mueble_edit_wrap_"] [data-testid="stButton"] {
