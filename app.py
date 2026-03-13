@@ -2773,22 +2773,6 @@ else:
         if confirmed_issues_df.empty:
             csv_output = confirmed_df.to_csv(index=False).encode("utf-8-sig")
             skirting_alerts_data = detect_skirting_shortage_by_source(confirmed_df)
-            for alert in skirting_alerts_data:
-                order = str(alert.get("order_value", "")).strip()
-                lenz = float(alert.get("lenz_sum", 0.0))
-                leny = float(alert.get("leny_sum", 0.0))
-                subtitulo = f"Bloque {order}"
-                if order.isdigit():
-                    idx = int(order) - 1
-                    if 0 <= idx < len(source_subtitles):
-                        subtitulo = source_subtitles[idx]
-
-                lenz_mm = int(round(lenz))
-                leny_mm = int(round(leny))
-                st.warning(
-                    "Cuidado: Es posible que haya menos rodapiés de los necesarios en el despiece "
-                    f"(REFERENCIA: {subtitulo} | Rodapiés: {lenz_mm} mm | Longitud de módulos: {leny_mm} mm)."
-                )
 
             add_open_cabinets_choice = st.radio(
                 "¿Quieres añadir muebles abiertos al proyecto?",
@@ -2832,6 +2816,22 @@ else:
                     file_name="resultado_transformado.csv",
                     mime="text/csv",
                 )
+                for alert in skirting_alerts_data:
+                    order = str(alert.get("order_value", "")).strip()
+                    lenz = float(alert.get("lenz_sum", 0.0))
+                    leny = float(alert.get("leny_sum", 0.0))
+                    subtitulo = f"Bloque {order}"
+                    if order.isdigit():
+                        idx = int(order) - 1
+                        if 0 <= idx < len(source_subtitles):
+                            subtitulo = source_subtitles[idx]
+
+                    lenz_mm = int(round(lenz))
+                    leny_mm = int(round(leny))
+                    st.warning(
+                        "Cuidado: Es posible que haya menos rodapiés de los necesarios en el despiece "
+                        f"(REFERENCIA: {subtitulo} | Rodapiés: {lenz_mm} mm | Longitud de módulos: {leny_mm} mm)."
+                    )
             elif u22_gate_active:
                 st.warning("Debes elegir cómo aplicar 22mm para piezas T/L antes de poder descargar.")
             st.session_state.pop("final_df_candidate", None)
