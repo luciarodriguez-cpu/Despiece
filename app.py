@@ -1096,10 +1096,10 @@ def _render_open_cabinet_card(index: int) -> None:
                 background-color: #f6f8fc;
                 border-radius: 10px;
                 box-sizing: border-box;
-                padding: 0.34rem 0.42rem 0.42rem 0.42rem;
-                margin: 0 0 0.12rem 0;
-                width: 100%;
-                max-width: none;
+                padding: 0.34rem 0.38rem 0.42rem 0.38rem;
+                margin: 0 auto 0.12rem auto;
+                width: 147px;
+                max-width: 147px;
                 min-height: 246px;
                 overflow: hidden;
               }
@@ -1110,7 +1110,8 @@ def _render_open_cabinet_card(index: int) -> None:
                 margin-top: 0.22rem;
               }
               [class*="st-key-mueble_card_"] .open-cabinet-preview {
-                width: 176px;
+                width: 100%;
+                max-width: 100%;
                 min-height: 118px;
                 height: 118px;
                 margin: 4px auto 8px auto;
@@ -1127,6 +1128,8 @@ def _render_open_cabinet_card(index: int) -> None:
               [class*="st-key-mueble_card_"] .open-cabinet-preview svg {
                 width: 100%;
                 height: 100%;
+                max-width: 100%;
+                max-height: 100%;
                 object-fit: contain;
                 display: block;
               }
@@ -1177,8 +1180,8 @@ def _render_open_cabinet_card(index: int) -> None:
               }
               [class*="st-key-mueble_edit_wrap_"] {
                 box-sizing: border-box;
-                width: 100%;
-                max-width: none;
+                width: 147px;
+                max-width: 147px;
                 margin: 0 auto;
               }
               [class*="st-key-mueble_edit_wrap_"] [data-testid="stButton"] {
