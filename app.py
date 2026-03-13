@@ -1095,18 +1095,22 @@ def _render_open_cabinet_card(index: int) -> None:
               [class*="st-key-mueble_card_"] {
                 background-color: #f6f8fc;
                 border-radius: 10px;
-                padding: 0.18rem 0.34rem 0.26rem 0.34rem;
-                margin: 0 auto 0.04rem auto;
-                width: 184px;
-                max-width: 184px;
+                box-sizing: border-box;
+                padding: 0.34rem 0.42rem 0.42rem 0.42rem;
+                margin: 0 auto 0.12rem auto;
+                width: 196px;
+                max-width: 196px;
+                min-height: 246px;
+                overflow: hidden;
               }
               [class*="st-key-mueble_card_"] [data-testid="stMarkdownContainer"] p {
-                margin-bottom: 0.16rem;
+                margin-bottom: 0.24rem;
               }
               [class*="st-key-mueble_card_"] .open-cabinet-preview {
-                width: 170px;
-                height: 104px;
-                margin: 0 auto 5px auto;
+                width: 176px;
+                min-height: 118px;
+                height: 118px;
+                margin: 0 auto 8px auto;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -1115,6 +1119,7 @@ def _render_open_cabinet_card(index: int) -> None:
                 border: none;
                 border-radius: 6px;
                 background: transparent;
+                flex-shrink: 0;
               }
               [class*="st-key-mueble_card_"] .open-cabinet-preview svg {
                 width: 100%;
@@ -1123,13 +1128,14 @@ def _render_open_cabinet_card(index: int) -> None:
                 display: block;
               }
               [class*="st-key-mueble_card_"] [data-testid="stVerticalBlock"] {
-                gap: 0.18rem;
+                gap: 0.3rem;
               }
               [class*="st-key-mueble_card_"] [data-testid="stCaptionContainer"] {
                 margin-top: 0;
-                margin-bottom: 0;
-                line-height: 1.18;
+                margin-bottom: 0.12rem;
+                line-height: 1.28;
                 font-size: 0.74rem;
+                overflow-wrap: anywhere;
               }
               [class*="st-key-mueble_card_"] [data-testid="stNumberInput"] label,
               [class*="st-key-mueble_card_"] [data-testid="stCheckbox"] label,
@@ -1151,7 +1157,9 @@ def _render_open_cabinet_card(index: int) -> None:
                 display: flex;
                 align-items: center;
                 gap: 7px;
-                margin-top: 1px;
+                margin-top: 3px;
+                min-height: 24px;
+                overflow-wrap: anywhere;
               }
               [class*="st-key-mueble_card_"] .open-cabinet-finish-swatch {
                 width: 22px;
@@ -1161,8 +1169,17 @@ def _render_open_cabinet_card(index: int) -> None:
                 flex-shrink: 0;
               }
               [class*="st-key-mueble_card_"] .open-cabinet-finish-label {
-                font-size: 0.86rem;
-                line-height: 1.18;
+                font-size: 0.82rem;
+                line-height: 1.24;
+              }
+              [class*="st-key-mueble_edit_wrap_"] {
+                box-sizing: border-box;
+                width: 196px;
+                max-width: 196px;
+                margin: 0 auto;
+              }
+              [class*="st-key-mueble_edit_wrap_"] [data-testid="stButton"] {
+                width: 100%;
               }
             </style>
             """,
@@ -1315,10 +1332,11 @@ def _render_open_cabinet_card(index: int) -> None:
             )
 
     if cabinet.get("aceptado", False):
-        if st.button("Editar", key=f"mueble_abierto_editar_{index}", use_container_width=True):
-            st.session_state["muebles_abiertos"][index]["aceptado"] = False
-            st.session_state["muebles_abiertos"][index]["svg"] = ""
-            st.rerun()
+        with st.container(key=f"mueble_edit_wrap_{index}"):
+            if st.button("Editar", key=f"mueble_abierto_editar_{index}", use_container_width=True):
+                st.session_state["muebles_abiertos"][index]["aceptado"] = False
+                st.session_state["muebles_abiertos"][index]["svg"] = ""
+                st.rerun()
 
 
 def render_open_cabinet_generator_section() -> None:
