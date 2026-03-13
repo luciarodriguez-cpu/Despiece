@@ -2790,23 +2790,40 @@ else:
                     f"(REFERENCIA: {subtitulo} | Rodapiés: {lenz_mm} mm | Longitud de módulos: {leny_mm} mm)."
                 )
 
-            st.radio(
+            add_open_cabinets_choice = st.radio(
                 "¿Quieres añadir muebles abiertos al proyecto?",
                 options=["No", "Sí"],
                 key="add_open_cabinets_choice",
                 horizontal=True,
+                index=None,
             )
-            add_open_cabinets_choice = st.session_state.get("add_open_cabinets_choice", "No")
 
-            can_download = True
-            if add_open_cabinets_choice == "Sí":
-                st.session_state["open_cabinets_visible"] = True
-                render_open_cabinet_generator_section()
-            else:
+            can_download = False
+            u22_gate_active = False
+            if add_open_cabinets_choice == "No":
                 st.session_state["open_cabinets_visible"] = False
                 if has_u_shape:
+                    u22_gate_active = True
                     u22_mode = render_u22_quick_marking_section(confirmed_df)
                     can_download = u22_mode not in {"pending", "manual"}
+                else:
+                    can_download = True
+            elif add_open_cabinets_choice == "Sí":
+                st.session_state["open_cabinets_visible"] = True
+                render_open_cabinet_generator_section()
+
+                muebles_abiertos = st.session_state.get("muebles_abiertos", [])
+                all_cards_accepted = all(bool(cabinet.get("aceptado", False)) for cabinet in muebles_abiertos)
+
+                if all_cards_accepted:
+                    if has_u_shape:
+                        u22_gate_active = True
+                        u22_mode = render_u22_quick_marking_section(confirmed_df)
+                        can_download = u22_mode not in {"pending", "manual"}
+                    else:
+                        can_download = True
+                else:
+                    st.info("Completa y acepta todas las tarjetas de muebles abiertos para continuar.")
 
             if can_download:
                 st.download_button(
@@ -2815,7 +2832,7 @@ else:
                     file_name="resultado_transformado.csv",
                     mime="text/csv",
                 )
-            else:
+            elif u22_gate_active:
                 st.warning("Debes elegir cómo aplicar 22mm para piezas T/L antes de poder descargar.")
             st.session_state.pop("final_df_candidate", None)
             st.session_state.pop("post_issues_df", None)
