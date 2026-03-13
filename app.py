@@ -1023,6 +1023,7 @@ def reset_muebles_abiertos_state() -> None:
     keys_to_clear = [
         "muebles_abiertos",
         "open_cabinets_visible",
+        "add_open_cabinets_choice",
         "cantidad_muebles_abiertos",
         "result_table_names",
     ]
@@ -1349,41 +1350,29 @@ def render_open_cabinet_generator_section() -> None:
     """Renderiza sección de muebles abiertos con tarjetas independientes."""
     _ensure_open_cabinets_state()
 
-    controls_anchor_col, _ = st.columns([0.38, 0.62], vertical_alignment="bottom")
-    with controls_anchor_col:
-        control_col_button, control_col_select = st.columns([0.82, 0.18], gap="small", vertical_alignment="bottom")
-        with control_col_button:
-            if st.button("Añadir muebles abiertos", use_container_width=True):
-                st.session_state["open_cabinets_visible"] = True
+    current_count = len(st.session_state["muebles_abiertos"])
+    opciones_cantidad = list(range(0, 11))
+    default_index = current_count if current_count in opciones_cantidad else min(current_count, 10)
 
-        current_count = len(st.session_state["muebles_abiertos"])
-        opciones_cantidad = list(range(0, 11))
-        default_index = current_count if current_count in opciones_cantidad else min(current_count, 10)
-
-        with control_col_select:
-            st.markdown(
-                """
-                <style>
-                  [class*="st-key-open_cabinets_qty"] [data-testid="stSelectbox"] {
-                    max-width: 72px;
-                  }
-                </style>
-                """,
-                unsafe_allow_html=True,
+    st.markdown(
+        """
+        <style>
+          [class*="st-key-open_cabinets_qty"] [data-testid="stSelectbox"] {
+            max-width: 72px;
+          }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    with st.container(key="open_cabinets_qty"):
+        cantidad_muebles_abiertos = int(
+            st.selectbox(
+                "Cantidad de muebles abiertos",
+                options=opciones_cantidad,
+                index=default_index,
+                key="cantidad_muebles_abiertos",
             )
-            with st.container(key="open_cabinets_qty"):
-                cantidad_muebles_abiertos = int(
-                    st.selectbox(
-                        "Cantidad",
-                        options=opciones_cantidad,
-                        index=default_index,
-                        key="cantidad_muebles_abiertos",
-                        label_visibility="collapsed",
-                    )
-                )
-
-    if not st.session_state["open_cabinets_visible"]:
-        return
+        )
 
     _sync_open_cabinets_count(cantidad_muebles_abiertos)
 
@@ -1410,6 +1399,72 @@ def render_open_cabinet_generator_section() -> None:
             for col_position, card_index in enumerate(row_indexes):
                 with row_columns[col_position]:
                     _render_open_cabinet_card(card_index)
+
+
+def render_u22_quick_marking_section(confirmed_df: pd.DataFrame) -> str:
+    """Renderiza el marcado rápido 22mm y devuelve el modo seleccionado."""
+    tl_candidates_mask = get_tl_candidates_mask(confirmed_df)
+    row_keys = build_u22_row_keys(confirmed_df)
+
+    if "u22_mode" not in st.session_state:
+        st.session_state["u22_mode"] = "pending"
+    if "u22_selected_keys" not in st.session_state:
+        st.session_state["u22_selected_keys"] = []
+
+    st.markdown("### Marcado rápido 22mm (U-Shape detectado)")
+    quick_col_all, quick_col_none, quick_col_manual = st.columns(3)
+
+    if quick_col_all.button("Marcar TODO T/L como 22mm", use_container_width=True):
+        st.session_state["u22_mode"] = "all"
+        st.session_state["u22_selected_keys"] = []
+        st.rerun()
+
+    if quick_col_none.button("Marcar NINGUNO como 22mm", use_container_width=True):
+        st.session_state["u22_mode"] = "none"
+        st.session_state["u22_selected_keys"] = []
+        st.rerun()
+
+    if quick_col_manual.button("Revisar manual", use_container_width=True):
+        st.session_state["u22_mode"] = "manual"
+
+    if st.session_state.get("u22_mode") == "manual":
+        candidate_rows = confirmed_df.loc[tl_candidates_mask].copy()
+        candidate_rows["__u22_key"] = row_keys.loc[tl_candidates_mask].values
+
+        previous_selected = set(st.session_state.get("u22_selected_keys", []))
+        candidate_rows["22mm"] = candidate_rows["__u22_key"].isin(previous_selected)
+
+        name_column = find_column_name(candidate_rows.columns, "Name")
+        tipologia_column = find_column_name(candidate_rows.columns, "Tipología") or find_column_name(
+            candidate_rows.columns, "Tipologia"
+        )
+
+        visible_columns = [col for col in [name_column, tipologia_column, "Orden CSV", "Observaciones"] if col]
+        visible_columns = [*visible_columns, "22mm", "__u22_key"]
+        manual_df = candidate_rows[visible_columns].copy()
+
+        manual_edited = st.data_editor(
+            manual_df,
+            width="stretch",
+            hide_index=True,
+            num_rows="fixed",
+            disabled=[col for col in manual_df.columns if col not in ["22mm"]],
+            column_config={
+                "22mm": st.column_config.CheckboxColumn(
+                    "22mm",
+                    help="Marca las filas que deben añadir 22mm en Observaciones.",
+                ),
+            },
+            key="u22_manual_editor",
+        )
+
+        if st.button("Confirmar 22mm", type="primary"):
+            selected_keys = manual_edited.loc[manual_edited["22mm"], "__u22_key"].astype(str).tolist()
+            st.session_state["u22_selected_keys"] = selected_keys
+            st.session_state["u22_mode"] = "manual_confirmed"
+            st.rerun()
+
+    return st.session_state.get("u22_mode", "pending")
 
 
 TIP_RULES = {
@@ -2689,65 +2744,6 @@ else:
         tl_candidates_mask = get_tl_candidates_mask(confirmed_df)
         row_keys = build_u22_row_keys(confirmed_df)
 
-        if has_u_shape:
-            if "u22_mode" not in st.session_state:
-                st.session_state["u22_mode"] = "pending"
-            if "u22_selected_keys" not in st.session_state:
-                st.session_state["u22_selected_keys"] = []
-
-            st.markdown("### Marcado rápido 22mm (U-Shape detectado)")
-            quick_col_all, quick_col_none, quick_col_manual = st.columns(3)
-
-            if quick_col_all.button("Marcar TODO T/L como 22mm", use_container_width=True):
-                st.session_state["u22_mode"] = "all"
-                st.session_state["u22_selected_keys"] = []
-                st.rerun()
-
-            if quick_col_none.button("Marcar NINGUNO como 22mm", use_container_width=True):
-                st.session_state["u22_mode"] = "none"
-                st.session_state["u22_selected_keys"] = []
-                st.rerun()
-
-            if quick_col_manual.button("Revisar manual", use_container_width=True):
-                st.session_state["u22_mode"] = "manual"
-
-            if st.session_state.get("u22_mode") == "manual":
-                candidate_rows = confirmed_df.loc[tl_candidates_mask].copy()
-                candidate_rows["__u22_key"] = row_keys.loc[tl_candidates_mask].values
-
-                previous_selected = set(st.session_state.get("u22_selected_keys", []))
-                candidate_rows["22mm"] = candidate_rows["__u22_key"].isin(previous_selected)
-
-                name_column = find_column_name(candidate_rows.columns, "Name")
-                tipologia_column = find_column_name(candidate_rows.columns, "Tipología") or find_column_name(
-                    candidate_rows.columns, "Tipologia"
-                )
-
-                visible_columns = [col for col in [name_column, tipologia_column, "Orden CSV", "Observaciones"] if col in candidate_rows.columns]
-                manual_editor_columns = ["22mm"] + visible_columns
-
-                st.caption("Selecciona qué piezas T/L deben marcarse como 22mm y confirma.")
-                manual_edited = st.data_editor(
-                    candidate_rows[manual_editor_columns + ["__u22_key"]],
-                    width="stretch",
-                    hide_index=False,
-                    num_rows="fixed",
-                    disabled=[col for col in manual_editor_columns if col != "22mm"] + ["__u22_key"],
-                    column_config={
-                        "22mm": st.column_config.CheckboxColumn(
-                            "22mm",
-                            help="Marca las filas que deben añadir 22mm en Observaciones.",
-                        ),
-                    },
-                    key="u22_manual_editor",
-                )
-
-                if st.button("Confirmar 22mm", type="primary"):
-                    selected_keys = manual_edited.loc[manual_edited["22mm"], "__u22_key"].astype(str).tolist()
-                    st.session_state["u22_selected_keys"] = selected_keys
-                    st.session_state["u22_mode"] = "manual_confirmed"
-                    st.rerun()
-
         u22_mode = st.session_state.get("u22_mode", "none") if has_u_shape else "none"
         mask_22mm = pd.Series(False, index=confirmed_df.index)
 
@@ -2774,10 +2770,7 @@ else:
         issues_df = detect_name_issues(review_df)
         confirmed_issues_df = detect_name_issues(confirmed_df)
 
-        can_download = (not has_u_shape) or (u22_mode not in {"pending", "manual"})
-
         if confirmed_issues_df.empty:
-            st.success("Names OK. Puedes descargar el CSV.")
             csv_output = confirmed_df.to_csv(index=False).encode("utf-8-sig")
             skirting_alerts_data = detect_skirting_shortage_by_source(confirmed_df)
             for alert in skirting_alerts_data:
@@ -2796,7 +2789,25 @@ else:
                     "Cuidado: Es posible que haya menos rodapiés de los necesarios en el despiece "
                     f"(REFERENCIA: {subtitulo} | Rodapiés: {lenz_mm} mm | Longitud de módulos: {leny_mm} mm)."
                 )
-            render_open_cabinet_generator_section()
+
+            st.radio(
+                "¿Quieres añadir muebles abiertos al proyecto?",
+                options=["No", "Sí"],
+                key="add_open_cabinets_choice",
+                horizontal=True,
+            )
+            add_open_cabinets_choice = st.session_state.get("add_open_cabinets_choice", "No")
+
+            can_download = True
+            if add_open_cabinets_choice == "Sí":
+                st.session_state["open_cabinets_visible"] = True
+                render_open_cabinet_generator_section()
+            else:
+                st.session_state["open_cabinets_visible"] = False
+                if has_u_shape:
+                    u22_mode = render_u22_quick_marking_section(confirmed_df)
+                    can_download = u22_mode not in {"pending", "manual"}
+
             if can_download:
                 st.download_button(
                     label="Descargar despiece",
