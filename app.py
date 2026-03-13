@@ -1365,14 +1365,19 @@ def render_open_cabinet_generator_section() -> None:
         unsafe_allow_html=True,
     )
     with st.container(key="open_cabinets_qty"):
-        cantidad_muebles_abiertos = int(
-            st.selectbox(
-                "Cantidad de muebles abiertos",
-                options=opciones_cantidad,
-                index=default_index,
-                key="cantidad_muebles_abiertos",
+        qty_label_col, qty_select_col = st.columns([3, 1], vertical_alignment="center")
+        with qty_label_col:
+            st.markdown("Cantidad de muebles abiertos")
+        with qty_select_col:
+            cantidad_muebles_abiertos = int(
+                st.selectbox(
+                    "Cantidad de muebles abiertos",
+                    options=opciones_cantidad,
+                    index=default_index,
+                    key="cantidad_muebles_abiertos",
+                    label_visibility="collapsed",
+                )
             )
-        )
 
     _sync_open_cabinets_count(cantidad_muebles_abiertos)
 
